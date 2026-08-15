@@ -1,0 +1,25 @@
+# Core
+numpy
+pandas
+scipy
+scikit-learn
+
+# Graph / network analysis
+networkx
+# torch-geometric  # 필요 시 설치 가이드: https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html
+# dgl              # 대안 GNN 라이브러리, 필요 시 사용
+
+# Deep learning / NLP (텍스트 임베딩 비교용)
+torch
+transformers
+sentence-transformers
+
+# Visualization
+matplotlib
+seaborn
+
+# Notebook / dev
+jupyter
+tqdm
+pyyaml
+python-dotenv
