@@ -1,5 +1,5 @@
 """
-04_train_gnn_condition_a.py — 조건 A(구조/메타데이터) 바닐라 GNN 학습·평가
+05_train_gnn_condition_a.py — 조건 A(구조/메타데이터) 바닐라 GNN 학습·평가
 
 조건 A = R-U-R(같은 작성자) 그래프 구조 + 수작업 피처(38차원) + 바닐라 GCN/GraphSAGE.
 9/2 미팅 피드백에 따라 CARE-GNN(강화학습) 대신 가장 순수한 구조 신호 기준선부터
@@ -12,9 +12,9 @@
 보고할 수 있다(9/2 피드백: 라벨 누수 방지 병행 보고 요청).
 
 사용 예:
-    python scripts/04_train_gnn_condition_a.py --type-class new
-    python scripts/04_train_gnn_condition_a.py --type-class new --exclude-cols singleton
-    python scripts/04_train_gnn_condition_a.py --type-class burst --backbone sage
+    python scripts/05_train_gnn_condition_a.py --type-class new
+    python scripts/05_train_gnn_condition_a.py --type-class new --exclude-cols singleton
+    python scripts/05_train_gnn_condition_a.py --type-class burst --backbone sage
 """
 
 from __future__ import annotations
