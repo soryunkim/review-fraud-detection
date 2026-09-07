@@ -24,6 +24,7 @@ PROCESSED = ROOT / "data" / "processed"
 
 REVIEWS = PROCESSED / "reviews.parquet"
 DEFAULT_EMB = PROCESSED / "emb_minilm_384.npy"
+HANDCRAFTED_FEATURES = PROCESSED / "features_handcrafted.parquet"
 
 # 모델에 피처로 넣으면 안 되는 컬럼.
 # user_id 는 숫자 크기만으로 사기율이 5배 차이난다(익명화 순서의 부산물).
@@ -88,3 +89,19 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
     """모델 입력으로 안전한 컬럼만 반환 (ID·라벨·원문 제외)."""
     drop = set(ID_COLUMNS) | {"fraud", "text", "date", "type_class"}
     return [c for c in df.columns if c not in drop]
+
+
+def load_handcrafted_features(path: Path | str = HANDCRAFTED_FEATURES) -> pd.DataFrame:
+    """조건 A 입력(38차원 수작업 피처) 로드. `scripts/03_build_features.py` 산출물.
+
+    review_id 순서로 저장되어 있으며 reviews.parquet 와 행 1:1 대응한다.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} 가 없습니다. `python scripts/03_build_features.py` 로 생성하세요."
+        )
+    feats = pd.read_parquet(path)
+    if not feats["review_id"].is_monotonic_increasing:
+        raise ValueError("review_id 순서가 깨졌습니다. 재정렬하지 마세요.")
+    return feats

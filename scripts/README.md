@@ -9,11 +9,36 @@
 |---|---|---|---|---|
 | 01 | `01_build_reviews.py` | `data/yelpzip.csv` | `data/processed/reviews.parquet` | 약 3분 |
 | 02 | `02_embed_text.py` | `reviews.parquet` | `data/processed/emb_minilm_384.npy` | 1.5~4.7시간 |
+| 03 | `03_build_features.py` | `reviews.parquet` | `data/processed/features_handcrafted.parquet` (조건 A 입력) | 수 분 |
+| 04 | `04_train_gnn_condition_a.py` | `reviews.parquet` + `features_handcrafted.parquet` | `results/condition_a/<type>_<backbone>.json` | 유형·표본 크기에 따라 초~분 단위 |
 
 ```bash
 python scripts/01_build_reviews.py
 python scripts/02_embed_text.py 2>&1 | tee logs/embed.log
+python scripts/03_build_features.py
+python scripts/04_train_gnn_condition_a.py --type-class new
 ```
+
+## 03 피처 생성에 대해
+
+`nltk` SentiWordNet 사전이 필요합니다. 최초 1회만 다운로드:
+
+```python
+import nltk
+nltk.download("sentiwordnet")
+nltk.download("wordnet")
+```
+
+## 04 조건 A 학습에 대해
+
+- R-U-R(같은 작성자) 그래프 + 수작업 피처(38차원) + 바닐라 GCN/GraphSAGE.
+  `--type-class`로 사기 서브유형(신규계정형 우선)을 골라 그 부분집합 안에서만
+  그래프를 구성한다 — 다른 유형 리뷰와는 연결하지 않는다.
+- 빠른 반복 실험은 `--frac 0.075` 처럼 작성자 단위 표본을 쓴다(업체 단위로 자르면
+  라벨·R-U-R 구조가 왜곡되므로 항상 작성자 단위, `src/data/loaders.sample_by_user`와
+  같은 원칙).
+- `--exclude-cols singleton`으로 라벨 정의(신규계정형=리뷰 수 기준)에 관여한 피처를
+  뺀 버전을 병행 보고할 수 있다(라벨 누수 점검용).
 
 ## 02 임베딩에 대해
 

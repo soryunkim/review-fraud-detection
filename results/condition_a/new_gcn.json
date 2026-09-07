@@ -1,0 +1,31 @@
+{
+  "condition": "A",
+  "type_class": "new",
+  "backbone": "gcn",
+  "frac": 1.0,
+  "n_nodes": 164422,
+  "n_edges": 63810,
+  "isolated_nodes": 113488,
+  "fraud_rate": 0.25702765583992004,
+  "n_features": 38,
+  "excluded_cols": [],
+  "epochs_run": 186,
+  "val": {
+    "auroc": 0.7306729685110269,
+    "auprc": 0.46794108492605974,
+    "best_f1": 0.5078967432741531,
+    "best_threshold": 0.4857252836227417,
+    "n": 24663,
+    "n_fraud": 6339
+  },
+  "test": {
+    "auroc": 0.7251930286137322,
+    "auprc": 0.46520531510032564,
+    "best_f1": 0.5035291438979963,
+    "best_threshold": 0.4995603859424591,
+    "n": 24663,
+    "n_fraud": 6339
+  },
+  "seed": 42,
+  "elapsed_sec": 71.1
+}
