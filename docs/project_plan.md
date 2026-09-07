@@ -31,7 +31,7 @@
 
 ## 4. 선행 연구 조사 요약
 
-> 상세 분석은 [`literature_review.md`](literature_review.md) 및 [`prior-research/`](../prior-research)의 논문별 요약 참고. 여기에는 핵심 요약 + 한계점만 정리.
+> 상세 분석은 [`literature_review.md`](../prior-research/literature_review.md) 및 [`prior-research/`](../prior-research)의 논문별 요약 참고. 여기에는 핵심 요약 + 한계점만 정리.
 
 - 핵심 논문 3편(정독 대상): 구조/메타데이터 — CARE-GNN (Dou et al., 2020); 텍스트 — Ott et al. (2011); 하이브리드 — Liu et al. (2025, FraudSquad: LM 임베딩 + Gated Graph Transformer).
 - 관련 선행연구의 한계점: 구조 계열 GNN(CARE-GNN 이후)은 텍스트 의미 정보를 배제하는 경향이 있고, 텍스트/하이브리드 계열은 오히려 오래된 방법론(2013~2015)이 많아 최신 임베딩을 쓰지 않는다. Liu et al.(2025)로 최신 구조+텍스트 결합 자체는 가능해졌으나, 사기 유형별 성능 분해는 다루지 않는다.

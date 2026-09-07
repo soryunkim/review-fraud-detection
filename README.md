@@ -13,7 +13,7 @@
 | 문서 | 내용 |
 |---|---|
 | [`docs/project_plan.md`](docs/project_plan.md) | 프로젝트 계획안 (배경, 문제정의, 목표, 추진전략) — 9/2 피드백 반영 최신본 |
-| [`docs/literature_review.md`](docs/literature_review.md) | 선행연구 정독 분석 템플릿 (7원칙 포맷) |
+| [`prior-research/literature_review.md`](prior-research/literature_review.md) | 선행연구 정독 분석 템플릿 (7원칙 포맷) |
 | [`docs/meeting_notes/`](docs/meeting_notes) | 미팅 정리본 |
 | [`docs/progress_reports/`](docs/progress_reports) | Progress Report (교수 피드백·진행상황·Agenda) |
 | [`docs/데이터_확인결과_오동진.md`](docs/데이터_확인결과_오동진.md) | 데이터 확인 결과 및 전처리 파이프라인 (YelpZip 확정, 서브유형 라벨, 예비 실험 결과) |
