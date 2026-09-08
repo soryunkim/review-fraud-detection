@@ -11,6 +11,12 @@
 쓰지 않음. `--exclude-cols singleton` 으로 라벨 정의에 쓰인 피처를 뺀 버전도 병행
 보고할 수 있다(9/2 피드백: 라벨 누수 방지 병행 보고 요청).
 
+사기 유형 부분집합은 겹침을 허용하는 불리언 플래그(`type_new`, `type_burst_kde`)로
+독립적으로 뽑는다(`scripts/04_add_burst_kde.py` 주석 참고: 상호배타 `type_class`는
+참고용일 뿐, 실제 실험은 각 플래그를 따로 씀). `--type-class burst`/`mixed`/`general`은
+`type_burst_kde` 컬럼이 필요하므로, 먼저 `python scripts/04_add_burst_kde.py` 로
+버스트형 재정의를 `reviews.parquet` 에 병합해야 한다.
+
 사용 예:
     python scripts/05_train_gnn_condition_a.py --type-class new
     python scripts/05_train_gnn_condition_a.py --type-class new --exclude-cols singleton
@@ -80,7 +86,10 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--type-class", default="new",
                     choices=["new", "burst", "mixed", "general", "all"],
-                    help="사기 서브유형 (기본: new = 신규계정형, 1순위)")
+                    help="사기 서브유형 (기본: new = 신규계정형, 1순위). "
+                         "겹침 허용 플래그(type_new/type_burst_kde) 기준: "
+                         "new=type_new / burst=type_burst_kde / "
+                         "mixed=둘 다 / general=둘 다 아님")
     ap.add_argument("--frac", type=float, default=1.0,
                     help="작성자 단위 표본 비율 (기본 1.0 = 전체). 빠른 반복 실험용")
     ap.add_argument("--backbone", default="gcn", choices=["gcn", "sage"])
@@ -102,15 +111,37 @@ def main() -> int:
     np.random.seed(args.seed)
 
     t0 = time.time()
-    reviews = load_reviews(columns=["review_id", "user_id", "fraud", "type_class"])
+    try:
+        reviews = load_reviews(
+            columns=["review_id", "user_id", "fraud", "type_new", "type_burst_kde"])
+        has_burst_kde = True
+    except Exception:
+        reviews = load_reviews(columns=["review_id", "user_id", "fraud", "type_new"])
+        has_burst_kde = False
+
     feats = load_handcrafted_features()
     if len(reviews) != len(feats):
         raise ValueError(f"행 수 불일치: reviews {len(reviews)} != features {len(feats)}")
 
-    if args.type_class != "all":
-        type_mask = (reviews["type_class"] == args.type_class).to_numpy()
-    else:
+    if args.type_class == "all":
         type_mask = np.ones(len(reviews), dtype=bool)
+    elif args.type_class == "new":
+        type_mask = reviews["type_new"].to_numpy() == 1
+    else:
+        if not has_burst_kde:
+            raise ValueError(
+                "type_burst_kde 컬럼이 없습니다. 먼저 "
+                "`python scripts/04_add_burst_kde.py` 로 버스트형 재정의를 "
+                "reviews.parquet 에 병합하세요."
+            )
+        is_new = reviews["type_new"].to_numpy() == 1
+        is_burst = reviews["type_burst_kde"].to_numpy() == 1
+        if args.type_class == "burst":
+            type_mask = is_burst
+        elif args.type_class == "mixed":
+            type_mask = is_new & is_burst
+        else:  # general
+            type_mask = ~is_new & ~is_burst
 
     sample_mask = subsample_users(reviews["user_id"].to_numpy(), args.frac, args.seed)
     keep = type_mask & sample_mask
@@ -212,6 +243,7 @@ def main() -> int:
     result = {
         "condition": "A",
         "type_class": args.type_class,
+        "type_definition": "type_new/type_burst_kde flags (겹침 허용, scripts/04_add_burst_kde.py)",
         "backbone": args.backbone,
         "frac": args.frac,
         "n_nodes": n_kept,

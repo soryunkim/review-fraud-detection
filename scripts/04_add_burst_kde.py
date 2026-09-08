@@ -32,10 +32,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-# ── 경로 (본인 환경에 맞게 수정) ──────────────────────
-SRC = Path(r"D:\\독심연\\reviews.parquet")            # 01이 만든 파일
-OUT = Path(r"D:\\독심연\\reviews.parquet")            # 덮어쓰기 (컬럼 추가)
-# ──────────────────────────────────────────────────────
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "data" / "processed" / "reviews.parquet"   # 01이 만든 파일
+OUT = ROOT / "data" / "processed" / "reviews.parquet"   # 덮어쓰기 (컬럼 추가)
 
 # ── 버스트형 파라미터 (검증된 값) ──
 BURST_WINDOW_DAYS = 7      # 같은 상점 7일 내
