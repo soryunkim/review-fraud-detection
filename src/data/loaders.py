@@ -105,3 +105,42 @@ def load_handcrafted_features(path: Path | str = HANDCRAFTED_FEATURES) -> pd.Dat
     if not feats["review_id"].is_monotonic_increasing:
         raise ValueError("review_id 순서가 깨졌습니다. 재정렬하지 마세요.")
     return feats
+
+
+RAYANA_FEATURES = PROCESSED / "features_rayana.parquet"
+RAYANA_META = PROCESSED / "features_rayana_meta.json"
+
+
+def load_rayana_features(level: str | list[str] | None = "review") -> pd.DataFrame:
+    """Rayana & Akoglu(2015) Table 2 정의 피처. `scripts/03_build_features.py` 산출물.
+
+    level="review"  -> 리뷰 수준 16개 (조건 A 권장 구성)
+    level=None      -> 전체 38개 (review 16 + user 11 + product 11)
+    level="product" -> 업체 수준 11개 (조건 B 의 '상점 메타')
+    level=["review", "user"] 처럼 리스트도 가능.
+
+    ★ 조건 A 에 user/product 수준을 넣지 말 것.
+      작성자·업체 집계는 그룹당 값이 하나라 R-U-R 이웃과 동일해지고,
+      GNN 이 집계할 새 정보가 없어져 MLP 로 퇴화한다(측정: 그래프 기여 0~음수).
+      리뷰 수준 16개만 쓰면 그래프 기여가 살아난다(버스트형 +0.099, 일반 +0.061).
+
+    review_id 순서로 저장되어 있으며 reviews.parquet 와 행 1:1 대응한다.
+    """
+    import json
+
+    if not RAYANA_FEATURES.exists():
+        raise FileNotFoundError(
+            f"{RAYANA_FEATURES} 가 없습니다. "
+            f"`python scripts/03_build_features.py` 로 생성하세요 (약 6분)."
+        )
+    feats = pd.read_parquet(RAYANA_FEATURES)
+    if not feats["review_id"].is_monotonic_increasing:
+        raise ValueError("review_id 순서가 깨졌습니다. 재정렬하지 마세요.")
+    if level is None:
+        return feats
+
+    meta = json.loads(RAYANA_META.read_text(encoding="utf-8"))
+    want = {level} if isinstance(level, str) else set(level)
+    cols = [c for c in feats.columns
+            if c != "review_id" and meta[c]["level"] in want]
+    return feats[["review_id"] + cols]
