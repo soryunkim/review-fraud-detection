@@ -1,0 +1,48 @@
+{
+  "purpose": "R-U-R만 사용한 그래프 vs R-U-R+R-S-R+R-T-R(세 관계 union) 그래프의 GNN 성능 비교. graph_contribution.json에는 이 조합(Rayana all_38 / review_16_only 피처셋 + 세 관계)이 없어서 별도로 실행함.",
+  "backbone": "vanilla GCN (hidden 64, dropout 0.3, lr 0.01, weight_decay 5e-4, epochs<=200, patience 20) — src/models/gcn.py 기본값과 동일",
+  "graph_construction": {
+    "R-U-R": "동일 user_id",
+    "R-S-R": "동일 prod_id + 동일 rating",
+    "R-T-R": "동일 prod_id + 동일 연-월",
+    "결합 방식": "세 인접행렬을 union(이진 OR)으로 결합 — 관계별 가중치 학습 없는 단순 그래프. RGCN/HAN 같은 관계 인식 모델은 아님."
+  },
+  "split": "stratified 70/15/15 (fraud 비율 유지), seed 42 — scripts/05_train_gnn_condition_a.py의 stratified_split과 동일 코드",
+  "sampling": {
+    "new": "작성자 단위 15% 서브샘플(frac=0.15, seed=42) — 원본 302,070건 → 45,214건. R-S-R 엣지가 약 1억(전체 기준 1.7억)에 달해 서브샘플 없이는 학습이 지나치게 느려짐(30분 이상)",
+    "mixed": "전량 사용 (frac=1.0), n=14,046",
+    "burst": "전량 사용 (frac=1.0), n=19,077",
+    "general": "미실행 — 이번 비교의 우선순위 밖이라 중단함"
+  },
+  "caveat": "graph_contribution.json의 R-U-R-only 수치는 정확한 표본(frac)이 문서화되어 있지 않음. burst/mixed는 n이 각 유형의 전체 표본 수와 일치해 frac=1.0으로 계산된 것으로 보이나(비교 가능), new는 표본 크기가 기록되어 있지 않아 이번 결과(frac=0.15)와 완전히 동일한 조건인지 확인 안 됨 — new 행의 비교는 참고용으로만 볼 것.",
+  "results_gnn_only": {
+    "review_16_only": {
+      "new":   {"three_relations": 0.6640, "rur_only_from_graph_contribution_json": 0.6943, "diff": -0.0303},
+      "mixed": {"three_relations": 0.6118, "rur_only_from_graph_contribution_json": 0.6979, "diff": -0.0861},
+      "burst": {"three_relations": 0.6455, "rur_only_from_graph_contribution_json": 0.8446, "diff": -0.1991}
+    },
+    "all_38": {
+      "new":   {"three_relations": 0.6777, "rur_only_from_graph_contribution_json": 0.7261, "diff": -0.0484},
+      "mixed": {"three_relations": 0.6329, "rur_only_from_graph_contribution_json": 0.7254, "diff": -0.0925},
+      "burst": {"three_relations": 0.6581, "rur_only_from_graph_contribution_json": 0.8507, "diff": -0.1926}
+    }
+  },
+  "raw_metrics": {
+    "review_16_only": {
+      "new":   {"auroc": 0.6640, "auprc": 0.3798, "best_f1": 0.4347, "frac": 0.15, "n_nodes": 45214},
+      "mixed": {"auroc": 0.6118, "auprc": 0.5077, "best_f1": 0.5312, "frac": 1.0, "n_nodes": 14046},
+      "burst": {"auroc": 0.6455, "auprc": 0.4488, "best_f1": 0.4648, "frac": 1.0, "n_nodes": 19077}
+    },
+    "all_38": {
+      "new":   {"auroc": 0.6777, "auprc": 0.4051, "best_f1": 0.4481, "frac": 0.15, "n_nodes": 45214},
+      "mixed": {"auroc": 0.6329, "auprc": 0.5288, "best_f1": 0.5336, "frac": 1.0, "n_nodes": 14046},
+      "burst": {"auroc": 0.6581, "auprc": 0.4687, "best_f1": 0.4814, "frac": 1.0, "n_nodes": 19077}
+    }
+  },
+  "graph_edge_counts": {
+    "new":   {"rur": 27282, "rsr": 1031140, "rtr": 56612, "union": 1095164},
+    "mixed": {"rur": 508, "rsr": 912938, "rtr": 42788, "union": 927558},
+    "burst": {"rur": 2698, "rsr": 1842842, "rtr": 71284, "union": 1868780}
+  },
+  "conclusion": "모든 유형·피처셋 조합에서 세 관계 그래프가 R-U-R 단독보다 성능이 낮음 (burst에서 가장 큰 하락, -0.19~-0.20). 공식 YelpChi .mat(0.9166 -> 0.6452, -0.2213)에서 관찰된 패턴과 방향이 일치 — 동질성 낮은 R-S-R/R-T-R을 그대로 엣지로 섞으면 손해라는 Phase 1 원칙(experiment_matrix.md)을 다시 뒷받침함. 다만 new 행은 표본 조건이 확실히 동일하지 않아 참고용."
+}
