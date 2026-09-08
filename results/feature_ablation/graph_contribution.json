@@ -1,0 +1,73 @@
+{
+  "source": "Rayana & Akoglu (KDD 2015) Table 2",
+  "backbone": "vanilla GCN (hidden 64, dropout 0.3, lr 0.01)",
+  "split": "작성자 단위 70/15/15, seed 42",
+  "metric": "test AUROC",
+  "results": {
+    "review_16_only": {
+      "new": [
+        0.6905,
+        0.6943
+      ],
+      "mixed": [
+        0.6943,
+        0.6979
+      ],
+      "burst": [
+        0.7452,
+        0.8446
+      ],
+      "general": [
+        0.721,
+        0.7823
+      ]
+    },
+    "all_38": {
+      "new": [
+        0.7276,
+        0.7261
+      ],
+      "mixed": [
+        0.7247,
+        0.7254
+      ],
+      "burst": [
+        0.8571,
+        0.8507
+      ],
+      "general": [
+        0.8468,
+        0.8349
+      ]
+    },
+    "legacy_handcrafted_38": {
+      "new": [
+        0.722,
+        0.7223
+      ],
+      "mixed": [
+        0.7231,
+        0.7212
+      ],
+      "burst": [
+        0.8767,
+        0.8777
+      ],
+      "general": [
+        0.8629,
+        0.8559
+      ]
+    },
+    "official_yelpchi_mat_32": {
+      "all": [
+        0.8665,
+        0.9166
+      ],
+      "all_three_relations": [
+        0.8665,
+        0.6452
+      ]
+    }
+  },
+  "note": "각 값은 [MLP(엣지없음), GNN(R-U-R)]. 작성자·업체 수준 피처를 넣으면 그래프 기여가 사라진다."
+}
