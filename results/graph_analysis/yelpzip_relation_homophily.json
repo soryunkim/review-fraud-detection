@@ -1,0 +1,25 @@
+{
+  "dataset": "YelpZip (608,458 reviews, fraud rate 0.1322)",
+  "random_baseline_homophily": 0.7706,
+  "relations": {
+    "R-U-R": {
+      "edges": 3036448,
+      "same_label": 0.9954,
+      "vs_random": 0.2248,
+      "fraud_neighbor_ratio_of_fraud": 0.8834
+    },
+    "R-S-R": {
+      "edges": 86932344,
+      "same_label": 0.8124,
+      "vs_random": 0.0418,
+      "fraud_neighbor_ratio_of_fraud": 0.1355
+    },
+    "R-T-R": {
+      "edges": 4406863,
+      "same_label": 0.7952,
+      "vs_random": 0.0246,
+      "fraud_neighbor_ratio_of_fraud": 0.1926
+    }
+  },
+  "note": "이전에 인용하던 R-U-R 0.90 / R-T-R 0.05 / R-S-R 0.05 는 YelpChi 논문 수치이며 YelpZip 에 적용되지 않는다. R-S-R/R-T-R 도 무작위 수준은 아님."
+}
