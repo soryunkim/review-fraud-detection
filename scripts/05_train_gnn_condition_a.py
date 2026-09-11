@@ -276,12 +276,16 @@ def main() -> int:
         logits = model(x_t, adj_norm)
         scores = torch.sigmoid(logits).numpy()
 
-    val_final = evaluate(fraud_all[val_idx], scores[val_idx])
-    test_final = evaluate(fraud_all[test_idx], scores[test_idx])
+    # 고정 임계값(Macro F1용): train 사기율 기준 상위 pos_rate 비율을 사기로 판정.
+    # val/test 라벨을 보고 사후에 고르는 게 아니라 train 시점에 정해지는 값이라
+    # best_f1(사후 최적 임계값)보다 실전에 가까운 평가다.
+    train_pos_rate = float(fraud_all[train_idx].mean())
+    val_final = evaluate(fraud_all[val_idx], scores[val_idx], pos_rate=train_pos_rate)
+    test_final = evaluate(fraud_all[test_idx], scores[test_idx], pos_rate=train_pos_rate)
     print(f"      val  : AUROC {val_final['auroc']:.4f} | AUPRC {val_final['auprc']:.4f} "
-          f"| best-F1 {val_final['best_f1']:.4f}")
+          f"| best-F1 {val_final['best_f1']:.4f} | Macro-F1(고정) {val_final['macro_f1']:.4f}")
     print(f"      test : AUROC {test_final['auroc']:.4f} | AUPRC {test_final['auprc']:.4f} "
-          f"| best-F1 {test_final['best_f1']:.4f}")
+          f"| best-F1 {test_final['best_f1']:.4f} | Macro-F1(고정) {test_final['macro_f1']:.4f}")
 
     result = {
         "condition": "A",
