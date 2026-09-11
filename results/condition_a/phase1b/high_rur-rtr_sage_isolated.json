@@ -1,0 +1,49 @@
+{
+  "condition": "A",
+  "group": "high",
+  "le2": false,
+  "scope": "isolated",
+  "relations": [
+    "rur",
+    "rtr"
+  ],
+  "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
+  "backbone": "sage",
+  "frac": 1.0,
+  "n_target": 101926,
+  "n_universe": 101926,
+  "n_edges": 796485,
+  "isolated_nodes_in_target": 11284,
+  "fraud_rate_target": 0.06298687309026718,
+  "n_features": 37,
+  "excluded_cols": [],
+  "epochs_run": 126,
+  "val": {
+    "auroc": 0.862810443657926,
+    "auprc": 0.38862586914098696,
+    "best_f1": 0.3949104618284637,
+    "best_threshold": 0.7871067523956299,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.8092594742774963,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.6719640303806277,
+    "fraud_f1_fixed": 0.3852544132917965,
+    "normal_f1_fixed": 0.9586736474694589
+  },
+  "test": {
+    "auroc": 0.8571221042444803,
+    "auprc": 0.38054877396731634,
+    "best_f1": 0.395004625346901,
+    "best_threshold": 0.7914294004440308,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.8168721795082092,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.672518145194174,
+    "fraud_f1_fixed": 0.3862928348909657,
+    "normal_f1_fixed": 0.9587434554973822
+  },
+  "seed": 42,
+  "elapsed_sec": 135.7
+}
