@@ -16,33 +16,33 @@
   "fraud_rate_target": 0.20885778963565826,
   "n_features": 37,
   "excluded_cols": [],
-  "epochs_run": 23,
+  "epochs_run": 98,
   "val": {
-    "auroc": 0.5696632936394778,
-    "auprc": 0.267773624625101,
-    "best_f1": 0.34804807999149023,
-    "best_threshold": 4.719877978200266e-33,
+    "auroc": 0.6451966589348415,
+    "auprc": 0.3381921375761552,
+    "best_f1": 0.38985179603114795,
+    "best_threshold": 0.48160526156425476,
     "n": 11809,
     "n_fraud": 2466,
-    "fixed_threshold": 0.48014363646507263,
+    "fixed_threshold": 0.591940701007843,
     "fixed_pos_rate_used": 0.20887236297130585,
-    "macro_f1": 0.5437731103883285,
-    "fraud_f1_fixed": 0.2781269004662477,
-    "normal_f1_fixed": 0.8094193203104094
+    "macro_f1": 0.5986074571318825,
+    "fraud_f1_fixed": 0.36488951956213256,
+    "normal_f1_fixed": 0.8323253947016324
   },
   "test": {
-    "auroc": 0.564847157345464,
-    "auprc": 0.25802563305480053,
-    "best_f1": 0.3454991243432574,
-    "best_threshold": 0.0,
+    "auroc": 0.6448114348720682,
+    "auprc": 0.33927103042850026,
+    "best_f1": 0.39184348305318273,
+    "best_threshold": 0.5047160983085632,
     "n": 11809,
     "n_fraud": 2466,
-    "fixed_threshold": 0.48165372014045715,
+    "fixed_threshold": 0.5915740132331848,
     "fixed_pos_rate_used": 0.20887236297130585,
-    "macro_f1": 0.543260639858015,
-    "fraud_f1_fixed": 0.2773160348672208,
-    "normal_f1_fixed": 0.8092052448488092
+    "macro_f1": 0.5973262808060985,
+    "fraud_f1_fixed": 0.3628623555645652,
+    "normal_f1_fixed": 0.8317902060476318
   },
   "seed": 42,
-  "elapsed_sec": 13.1
+  "elapsed_sec": 54.0
 }
