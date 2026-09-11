@@ -1,0 +1,45 @@
+{
+  "n_target": 78733,
+  "fraud_rate_target": 0.20885778963565826,
+  "epochs_run": 38,
+  "val": {
+    "auroc": 0.6580311024756337,
+    "auprc": 0.33885898660267816,
+    "best_f1": 0.40187290969899664,
+    "best_threshold": 0.4966120719909668,
+    "n": 11809,
+    "n_fraud": 2466,
+    "fixed_threshold": 0.5840076208114624,
+    "fixed_pos_rate_used": 0.20887236297130585,
+    "macro_f1": 0.5911766344423355,
+    "fraud_f1_fixed": 0.3531319683762416,
+    "normal_f1_fixed": 0.8292213005084292
+  },
+  "test": {
+    "auroc": 0.6517191223306344,
+    "auprc": 0.3268031320380582,
+    "best_f1": 0.3975863960504663,
+    "best_threshold": 0.44008639454841614,
+    "n": 11809,
+    "n_fraud": 2466,
+    "fixed_threshold": 0.5836470127105713,
+    "fixed_pos_rate_used": 0.20887236297130585,
+    "macro_f1": 0.5898954581165514,
+    "fraud_f1_fixed": 0.35110480437867425,
+    "normal_f1_fixed": 0.8286861118544286
+  },
+  "model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)",
+  "group": "low",
+  "features": "text",
+  "n_features": 384,
+  "seed": 0,
+  "feature_columns": "emb_minilm_384 (384)",
+  "hyperparams": {
+    "hidden": 64,
+    "dropout": 0.3,
+    "lr": 0.01,
+    "weight_decay": 0.0005,
+    "epochs": 200,
+    "patience": 20
+  }
+}

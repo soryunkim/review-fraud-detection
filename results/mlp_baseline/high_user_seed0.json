@@ -1,0 +1,57 @@
+{
+  "n_target": 101926,
+  "fraud_rate_target": 0.06298687309026718,
+  "epochs_run": 200,
+  "val": {
+    "auroc": 0.847871743152851,
+    "auprc": 0.3347932703645309,
+    "best_f1": 0.36116152450090744,
+    "best_threshold": 0.7753580212593079,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.8007411956787109,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.6509076674658707,
+    "fraud_f1_fixed": 0.34579439252336447,
+    "normal_f1_fixed": 0.956020942408377
+  },
+  "test": {
+    "auroc": 0.8381187352641088,
+    "auprc": 0.3094543682523829,
+    "best_f1": 0.3513971210838273,
+    "best_threshold": 0.7647877931594849,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.804592490196228,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.6425959452626772,
+    "fraud_f1_fixed": 0.3302180685358255,
+    "normal_f1_fixed": 0.9549738219895288
+  },
+  "model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)",
+  "group": "high",
+  "features": "user",
+  "n_features": 11,
+  "seed": 0,
+  "feature_columns": [
+    "U_MNR",
+    "U_PR",
+    "U_NR",
+    "U_avgRD",
+    "U_WRD",
+    "U_BST",
+    "U_ERD",
+    "U_ETG",
+    "U_RL",
+    "U_ACS",
+    "U_MCS"
+  ],
+  "hyperparams": {
+    "hidden": 64,
+    "dropout": 0.3,
+    "lr": 0.01,
+    "weight_decay": 0.0005,
+    "epochs": 200,
+    "patience": 20
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "n_target": 101926,
+  "fraud_rate_target": 0.06298687309026718,
+  "epochs_run": 100,
+  "val": {
+    "auroc": 0.7132176027865219,
+    "auprc": 0.15183958555457014,
+    "best_f1": 0.21300527240773284,
+    "best_threshold": 0.6471673250198364,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.6932618618011475,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.5700069046881201,
+    "fraud_f1_fixed": 0.19418483904465214,
+    "normal_f1_fixed": 0.9458289703315881
+  },
+  "test": {
+    "auroc": 0.7050523469596719,
+    "auprc": 0.14448732150567895,
+    "best_f1": 0.2060461416070008,
+    "best_threshold": 0.6605893969535828,
+    "n": 15288,
+    "n_fraud": 963,
+    "fixed_threshold": 0.693113386631012,
+    "fixed_pos_rate_used": 0.06298528611660004,
+    "macro_f1": 0.5644657565526577,
+    "fraud_f1_fixed": 0.1838006230529595,
+    "normal_f1_fixed": 0.9451308900523561
+  },
+  "model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)",
+  "group": "high",
+  "features": "review",
+  "n_features": 16,
+  "seed": 0,
+  "feature_columns": [
+    "Rank",
+    "RD",
+    "EXT",
+    "DEV",
+    "ETF",
+    "ISR",
+    "PCW",
+    "PC",
+    "L",
+    "PP1",
+    "RES",
+    "SW",
+    "OW",
+    "DLu",
+    "DLb",
+    "F"
+  ],
+  "hyperparams": {
+    "hidden": 64,
+    "dropout": 0.3,
+    "lr": 0.01,
+    "weight_decay": 0.0005,
+    "epochs": 200,
+    "patience": 20
+  }
+}
