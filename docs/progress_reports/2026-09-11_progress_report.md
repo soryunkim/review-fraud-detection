@@ -194,7 +194,7 @@
 
 ### 7.2. #7 RUR+RSR+RTR (전체 조합) — isolated
 
-**설정**: 위 #1~#3과 완전히 동일(저활동형 as-of≤1, `scope=isolated`, GCN, as-of 피처 37개, n=78,733, 사기율 20.9%, seed 42). 실행: 소륜.
+**설정**: 위 #1~#3과 완전히 동일(저활동형 as-of≤1, `scope=isolated`, GCN, as-of 피처 37개, n=78,733, 사기율 20.9%, seed 42). 실행: 민섭(분담표대로 #7 담당).
 
 | # | 관계 | 엣지 | 고립 노드 | test AUROC | test AUPRC | test best_f1 | test Macro F1 | test 사기F1 |
 |---|---|---|---|---|---|---|---|---|
