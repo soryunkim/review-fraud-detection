@@ -33,7 +33,13 @@ SRC = ROOT / "data" / "yelpzip.csv"
 OUT = ROOT / "data" / "processed" / "reviews.parquet"
 
 # 저활동형(구 "신규계정형"): 리뷰 작성 시점까지 누적 리뷰 수(as-of) <= NEW_MAX
-NEW_MAX = 3
+# NEW_MAX = 1 은 "작성자의 첫 리뷰(이전 이력 0건)" = cold-start 표준 정의
+# (Wang et al., ACL 2017; Xiang et al., 2022). 2026-09-11 팀 결정.
+# 작성자 리뷰 수 분포가 극도로 치우쳐(작성자의 65.4%가 1건) 하위 10~50% 분위수가
+# 모두 1건이므로, 분위수 기반 정의와도 일치한다.
+NEW_MAX = 1
+# 민감도 분석용: 이전 이력 1건 이하(as-of <= 2)
+NEW_MAX_SENS = 2
 # 버스트형(임시): 같은 업체에 BURST_WINDOW_DAYS 내 BURST_MIN_K 건 이상
 BURST_WINDOW_DAYS = 7
 BURST_MIN_K = 5
@@ -74,6 +80,8 @@ def add_new_account_type(df: pd.DataFrame) -> pd.DataFrame:
     asof = df.loc[order].groupby("user_id").cumcount().to_numpy() + 1
     df["n_reviews_user_asof"] = pd.Series(asof, index=order).reindex(df.index).astype("int32")
     df["type_new"] = (df["n_reviews_user_asof"] <= NEW_MAX).astype("int8")
+    # 민감도 분석용 (주 분석은 type_new)
+    df["type_new_le2"] = (df["n_reviews_user_asof"] <= NEW_MAX_SENS).astype("int8")
     return df
 
 
