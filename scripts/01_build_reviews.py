@@ -6,9 +6,15 @@
      이후 만들어지는 모든 산출물(임베딩 .npy, 피처 테이블, 그래프)은
      이 순서를 기준으로 정렬된다. 절대 재정렬하지 말 것.
   2) label(-1/1) -> fraud(1/0) 로 변환. tag 컬럼은 label 과 100% 중복이라 제거.
-  3) 사기 유형 라벨을 "전체 데이터 기준"으로 계산한다.
-     표본 안에서 계산하면 리뷰어의 리뷰 수가 과소집계되어 라벨이 오염된다
-     (업체 400개 표본 실험에서 신규계정형의 39.8%가 거짓으로 확인됨).
+  3) 저활동형(구 "신규계정형") 라벨을 "그 리뷰 작성 시점까지의 누적 리뷰 수(as-of)"
+     기준으로 계산한다(9/9 지도교수 피드백). 표본 안에서 계산하면 리뷰어의
+     리뷰 수가 과소집계되어 라벨이 오염되고(업체 400개 표본 실험에서
+     신규계정형의 39.8%가 거짓으로 확인됨), 반대로 유저 전체(과거+미래)
+     리뷰 수로 계산하면 미래 시점 정보가 새어 들어간다(as-of 누수).
+     이 as-of 카운트는 전체 10년 이력을 기준으로 계산한다 — 분석 대상
+     리뷰를 2014년으로만 필터링하더라도(Phase 1-C), 카운트 자체는 필터링
+     이전의 전체 이력을 본다(2026-09-11 팀 결정: 옵션 B, 카운트는 전체
+     이력·분석 대상만 2014년).
 
 주의: type_burst 는 전역 고정 임계값 기반의 임시 라벨이다.
       지도교수 피드백에 따른 상점별 KDE 적응형 정의는 별도 스크립트에서
@@ -26,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "data" / "yelpzip.csv"
 OUT = ROOT / "data" / "processed" / "reviews.parquet"
 
-# 신규계정형: 리뷰어 총 리뷰 수 <= NEW_MAX
+# 저활동형(구 "신규계정형"): 리뷰 작성 시점까지 누적 리뷰 수(as-of) <= NEW_MAX
 NEW_MAX = 3
 # 버스트형(임시): 같은 업체에 BURST_WINDOW_DAYS 내 BURST_MIN_K 건 이상
 BURST_WINDOW_DAYS = 7
@@ -49,14 +55,25 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     # label: -1 = 사기(filtered), 1 = 정상(recommended) -> fraud 1/0
     df["fraud"] = (df["label"] == -1).astype("int8")
     df = df.drop(columns=["label", "tag"])
+    df["year"] = df["date"].dt.year.astype("int32")
     return df
 
 
 def add_new_account_type(df: pd.DataFrame) -> pd.DataFrame:
-    """신규계정형: 작성자의 전체 리뷰 수 기준."""
-    n = df.groupby("user_id")["review_id"].transform("size")
-    df["n_reviews_user"] = n.astype("int32")
-    df["type_new"] = (n <= NEW_MAX).astype("int8")
+    """저활동형(구 "신규계정형"): 리뷰 작성 시점까지의 누적 리뷰 수(as-of) 기준.
+
+    n_reviews_user(전체 이력 총합, 기존 유지 — 03_build_features.py의
+    singleton 피처가 이 컬럼을 그대로 사용하므로 하위호환 위해 보존)와
+    n_reviews_user_asof(그 리뷰 작성 시점까지 누적, 미래 리뷰 제외)를 구분한다.
+    type_new(저활동형 라벨)는 반드시 후자 기준이어야 미래 누수가 없다.
+    """
+    n_total = df.groupby("user_id")["review_id"].transform("size")
+    df["n_reviews_user"] = n_total.astype("int32")
+
+    order = df.sort_values(["user_id", "date", "review_id"]).index
+    asof = df.loc[order].groupby("user_id").cumcount().to_numpy() + 1
+    df["n_reviews_user_asof"] = pd.Series(asof, index=order).reindex(df.index).astype("int32")
+    df["type_new"] = (df["n_reviews_user_asof"] <= NEW_MAX).astype("int8")
     return df
 
 
@@ -106,6 +123,24 @@ def report(df: pd.DataFrame) -> None:
     t["비중%"] = (100 * t["표본수"] / len(df)).round(1)
     t["사기율"] = (100 * t["사기율"]).round(1)
     print(t[["표본수", "비중%", "사기수", "사기율"]].to_string())
+
+    df14 = df[df.year == 2014].copy()
+    print(f"\n[2014년 분석 범위] {len(df14):,}건 ({100 * len(df14) / len(df):.1f}%)")
+    t14 = df14.groupby("type_class").agg(
+        표본수=("fraud", "size"), 사기수=("fraud", "sum"), 사기율=("fraud", "mean")
+    )
+    t14["비중%"] = (100 * t14["표본수"] / len(df14)).round(1)
+    t14["사기율"] = (100 * t14["사기율"]).round(1)
+    print(t14[["표본수", "비중%", "사기수", "사기율"]].to_string())
+    # R-U-R 그래프는 2014년 리뷰끼리만 엣지를 만드므로, 싱글턴 여부는
+    # (as-of 누적이 아니라) 2014년 내 해당 유저의 리뷰 수로 판단해야 한다.
+    n_user_2014 = df14.groupby("user_id")["review_id"].transform("size")
+    singleton_2014 = n_user_2014 == 1
+    is_low_activity = df14.type_new == 1
+    print(
+        f"저활동형 중 2014년-그래프 싱글턴(R-U-R 엣지 없음) 비율: "
+        f"{100 * (singleton_2014 & is_low_activity).sum() / is_low_activity.sum():.1f}%"
+    )
 
 
 def main() -> int:

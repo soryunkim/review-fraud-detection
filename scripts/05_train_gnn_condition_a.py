@@ -92,6 +92,9 @@ def main() -> int:
                          "mixed=둘 다 / general=둘 다 아님")
     ap.add_argument("--frac", type=float, default=1.0,
                     help="작성자 단위 표본 비율 (기본 1.0 = 전체). 빠른 반복 실험용")
+    ap.add_argument("--year", type=int, default=2014,
+                    help="분석 대상 연도 (기본 2014 — 9/9 팀 결정: 임의 샘플링 대신 "
+                         "연도 필터링. 0을 주면 연도 필터 없이 전체 기간 사용)")
     ap.add_argument("--backbone", default="gcn", choices=["gcn", "sage"])
     ap.add_argument("--hidden", type=int, default=64)
     ap.add_argument("--dropout", type=float, default=0.3)
@@ -113,10 +116,10 @@ def main() -> int:
     t0 = time.time()
     try:
         reviews = load_reviews(
-            columns=["review_id", "user_id", "fraud", "type_new", "type_burst_kde"])
+            columns=["review_id", "user_id", "fraud", "type_new", "type_burst_kde", "year"])
         has_burst_kde = True
     except Exception:
-        reviews = load_reviews(columns=["review_id", "user_id", "fraud", "type_new"])
+        reviews = load_reviews(columns=["review_id", "user_id", "fraud", "type_new", "year"])
         has_burst_kde = False
 
     feats = load_handcrafted_features()
@@ -144,18 +147,19 @@ def main() -> int:
             type_mask = ~is_new & ~is_burst
 
     sample_mask = subsample_users(reviews["user_id"].to_numpy(), args.frac, args.seed)
-    keep = type_mask & sample_mask
+    year_mask = (reviews["year"].to_numpy() == args.year) if args.year else np.ones(len(reviews), dtype=bool)
+    keep = type_mask & sample_mask & year_mask
     n_kept = int(keep.sum())
     if n_kept < 100:
-        raise ValueError(f"부분집합이 너무 작습니다 (n={n_kept}). --frac 을 키우세요.")
+        raise ValueError(f"부분집합이 너무 작습니다 (n={n_kept}). --frac 을 키우거나 --year 0(전체 기간)을 확인하세요.")
 
     user_ids = reviews.loc[keep, "user_id"].to_numpy()
     fraud = reviews.loc[keep, "fraud"].to_numpy().astype("float32")
 
     feat_cols = [c for c in feats.columns if c != "review_id" and c not in args.exclude_cols]
     X = feats.loc[keep, feat_cols].to_numpy(dtype="float32")
-    print(f"[설정] type_class={args.type_class} frac={args.frac} n={n_kept:,} "
-          f"사기율={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
+    print(f"[설정] type_class={args.type_class} year={args.year or '전체'} frac={args.frac} "
+          f"n={n_kept:,} 사기율={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
 
     print("[1/4] R-U-R 그래프 구성")
     adj = build_rur_adjacency(user_ids)
@@ -245,6 +249,7 @@ def main() -> int:
         "type_class": args.type_class,
         "type_definition": "type_new/type_burst_kde flags (겹침 허용, scripts/04_add_burst_kde.py)",
         "backbone": args.backbone,
+        "year": args.year or "all",
         "frac": args.frac,
         "n_nodes": n_kept,
         "n_edges": n_edges,
