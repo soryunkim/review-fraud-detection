@@ -13,15 +13,18 @@ Phase 1-B(7가지 관계 조합) 실험은 `--relations`로 조합을 지정해 
     rur / rsr / rtr / rur,rsr / rur,rtr / rsr,rtr / rur,rsr,rtr
 
 유형은 저활동(`--group low`, as-of 누적 리뷰 수 ≤1 = 작성자의 첫 리뷰) vs
-비저활동(`--group high`)으로 비교한다(오동진, 2026-09-11 확정). 그래프는
-지정한 그룹 부분집합 안에서만 남기고(2014년 전체 그래프를 그 그룹의 노드로
-재인덱싱), 그 부분그래프로 학습·평가한다 — 유형별로 독립된 미니 실험이라는
-기존 매트릭스 설계(신규계정형/버스트형을 각각 별도로 도는 방식)와 일관되게
-유지한 것. 그룹을 섞은 전체 그래프로 학습하고 그룹별로 평가만 나누는
-대안(전체 그래프 학습)도 고려할 수 있으나, 그러면 비저활동 유저의 신호가
-저활동 예측에 새어 들어와 "관계 자체의 정보 추가 효과"가 아니라 "이웃
-데이터가 많아진 효과"와 섞일 위험이 있어 채택하지 않았다 — 필요하면
-후속 논의.
+비저활동(`--group high`)으로 비교한다(오동진, 2026-09-11 확정).
+
+`--scope`로 그래프 범위를 두 가지 중 골라 **둘 다 돌려서 비교**할 수 있다
+(2026-09-11, 팀 요청):
+  - `isolated`(기본): 지정한 그룹 노드만 그래프에 남긴다(2014년 전체 그래프를
+    그 그룹의 노드로 재인덱싱) — 그룹 안에서만 통하는 관계의 순수 효과를 잰다.
+    기존 매트릭스 설계(유형별 독립 미니 실험)와 일관됨.
+  - `full`: 2014년 전체 그래프(그룹 밖 이웃 포함)를 그대로 쓰되, 학습(loss)·
+    val·test는 여전히 지정한 그룹 노드로만 계산한다 — 그룹 밖 이웃의 신호까지
+    포함했을 때 얼마나 더 도움되는지를 잰다("이웃 데이터가 많아진 효과"까지 포함).
+  두 scope의 차이 = "관계 자체의 순수 효과" vs "그 관계로 도달 가능한 전체
+  이웃 데이터의 효과". 둘 다 실행해 비교하는 것을 권장.
 
 ⚠️ `--exclude-cols`: 라벨 정의에 쓰인 피처(`singleton` 등)를 빼는 병행
 보고용(9/2 피드백). 현재 `features_handcrafted.parquet`는 오동진이 as-of
@@ -128,6 +131,10 @@ def main() -> int:
                          "rur / rsr / rtr / rur,rsr / rur,rtr / rsr,rtr / rur,rsr,rtr")
     ap.add_argument("--frac", type=float, default=1.0,
                     help="작성자 단위 표본 비율 (기본 1.0 = 전체). 빠른 반복 실험용")
+    ap.add_argument("--scope", default="isolated", choices=["isolated", "full"],
+                    help="isolated(기본): 그룹 부분그래프만 사용 — 그룹 내부 관계만의 순수 효과. "
+                         "full: 2014년 전체 그래프(그룹 밖 이웃 포함)를 쓰되 학습/평가는 그룹으로 "
+                         "한정 — 이웃 데이터가 많아지는 효과까지 포함. 둘 다 돌려서 비교 가능.")
     ap.add_argument("--backbone", default="gcn", choices=["gcn", "sage"])
     ap.add_argument("--hidden", type=int, default=64)
     ap.add_argument("--dropout", type=float, default=0.3)
@@ -161,51 +168,62 @@ def main() -> int:
 
     group_mask = build_group_mask(nodes, args.group, args.le2)
     sample_mask = subsample_users(nodes["user_id"].to_numpy(), args.frac, args.seed)
-    keep = group_mask & sample_mask
-    n_kept = int(keep.sum())
-    if n_kept < 100:
-        raise ValueError(f"부분집합이 너무 작습니다 (n={n_kept}). --frac 을 키우세요.")
+    target = group_mask & sample_mask   # 학습/평가 대상(그룹) — 항상 이 노드들로만 지도학습·채점
+    n_target = int(target.sum())
+    if n_target < 100:
+        raise ValueError(f"부분집합이 너무 작습니다 (n={n_target}). --frac 을 키우세요.")
 
-    sub_nodes = nodes.loc[keep].reset_index(drop=True)
-    fraud = sub_nodes["fraud"].to_numpy().astype("float32")
+    # universe = 그래프에 실제로 올릴 노드 집합.
+    #   isolated: target(그룹)만 그래프에 남긴다 — 그룹 밖 이웃은 아예 존재하지 않음.
+    #   full    : 2014년 전체(표본 적용) 노드를 그래프에 남긴다 — 그룹 밖 이웃도 메시지를 보낼 수 있음.
+    # 어느 쪽이든 loss·val·test는 target 노드로만 계산해 "무엇을 재는지"를 동일하게 유지한다.
+    universe = target if args.scope == "isolated" else sample_mask
+    n_universe = int(universe.sum())
+
+    sub_nodes = nodes.loc[universe].reset_index(drop=True)
+    target_local = target[universe]     # universe 로컬 좌표계에서 target 여부
+    fraud_all = sub_nodes["fraud"].to_numpy().astype("float32")
+    fraud = fraud_all[target_local]     # 리포트용 사기율은 target 기준
 
     feat_cols = [c for c in feats.columns if c != "review_id" and c not in args.exclude_cols]
     X = feats_idx.loc[sub_nodes["review_id"].to_numpy(), feat_cols].to_numpy(dtype="float32")
 
     group_label = f"{args.group}{'(<=2)' if args.le2 else ''}"
-    print(f"[설정] group={group_label} relations={'+'.join(relations)} frac={args.frac} "
-          f"n={n_kept:,} 사기율={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
+    print(f"[설정] group={group_label} scope={args.scope} relations={'+'.join(relations)} "
+          f"frac={args.frac} n_target={n_target:,} n_universe={n_universe:,} "
+          f"사기율(target)={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
 
     print("[1/4] 관계 그래프 결합 및 부분그래프 추출")
     combined = combine(adjs, relations)
-    adj = subset_adjacency(combined, keep)
+    adj = subset_adjacency(combined, universe)
     n_edges = adj.nnz
     indeg = np.asarray(adj.sum(axis=1)).ravel()
-    isolated = int((indeg == 0).sum())
-    print(f"      엣지 {n_edges:,}개 | 과거 이웃 0개(고립) {isolated:,}개 "
-          f"({isolated/n_kept:.1%}) | {time.time()-t0:.0f}초")
+    isolated = int((indeg[target_local] == 0).sum())
+    print(f"      엣지 {n_edges:,}개(universe 기준) | target 중 과거 이웃 0개(고립) "
+          f"{isolated:,}개 ({isolated/n_target:.1%}) | {time.time()-t0:.0f}초")
 
     self_loop = args.backbone == "gcn"
     adj_norm = scipy_to_torch_sparse(row_normalize(adj, self_loop=self_loop))
 
-    print("[2/4] train/val/test 분할 (사기율 유지, seed 고정)")
-    train_mask, val_mask, test_mask = stratified_split(fraud, seed=args.seed)
-    print(f"      train {train_mask.sum():,} / val {val_mask.sum():,} / "
-          f"test {test_mask.sum():,}")
+    print("[2/4] train/val/test 분할 (target 노드에서만, 사기율 유지, seed 고정)")
+    target_idx_in_universe = np.flatnonzero(target_local)
+    train_rel, val_rel, test_rel = stratified_split(fraud, seed=args.seed)
+    train_idx = target_idx_in_universe[train_rel]
+    val_idx = target_idx_in_universe[val_rel]
+    test_idx = target_idx_in_universe[test_rel]
+    print(f"      train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,}")
 
-    mu = X[train_mask].mean(axis=0, keepdims=True)
-    sigma = X[train_mask].std(axis=0, keepdims=True)
+    mu = X[train_idx].mean(axis=0, keepdims=True)
+    sigma = X[train_idx].std(axis=0, keepdims=True)
     sigma[sigma == 0] = 1.0
     X = (X - mu) / sigma
 
     x_t = torch.from_numpy(X)
-    y_t = torch.from_numpy(fraud)
-    train_idx = torch.from_numpy(np.flatnonzero(train_mask))
-    val_idx = np.flatnonzero(val_mask)
-    test_idx = np.flatnonzero(test_mask)
+    y_t = torch.from_numpy(fraud_all)
+    train_idx_t = torch.from_numpy(train_idx)
 
-    pos = fraud[train_mask].sum()
-    neg = train_mask.sum() - pos
+    pos = fraud_all[train_idx].sum()
+    neg = len(train_idx) - pos
     pos_weight = torch.tensor([neg / max(pos, 1.0)])
     print(f"      pos_weight(train)={pos_weight.item():.2f}")
 
@@ -222,7 +240,7 @@ def main() -> int:
         model.train()
         optim.zero_grad()
         logits = model(x_t, adj_norm)
-        loss = loss_fn(logits[train_idx], y_t[train_idx])
+        loss = loss_fn(logits[train_idx_t], y_t[train_idx_t])
         loss.backward()
         optim.step()
 
@@ -230,7 +248,7 @@ def main() -> int:
         with torch.no_grad():
             logits = model(x_t, adj_norm)
             val_scores = torch.sigmoid(logits[val_idx]).numpy()
-        val_metrics = evaluate(fraud[val_idx], val_scores)
+        val_metrics = evaluate(fraud_all[val_idx], val_scores)
 
         if val_metrics["auroc"] > best_val_auroc:
             best_val_auroc = val_metrics["auroc"]
@@ -254,8 +272,8 @@ def main() -> int:
         logits = model(x_t, adj_norm)
         scores = torch.sigmoid(logits).numpy()
 
-    val_final = evaluate(fraud[val_idx], scores[val_idx])
-    test_final = evaluate(fraud[test_idx], scores[test_idx])
+    val_final = evaluate(fraud_all[val_idx], scores[val_idx])
+    test_final = evaluate(fraud_all[test_idx], scores[test_idx])
     print(f"      val  : AUROC {val_final['auroc']:.4f} | AUPRC {val_final['auprc']:.4f} "
           f"| best-F1 {val_final['best_f1']:.4f}")
     print(f"      test : AUROC {test_final['auroc']:.4f} | AUPRC {test_final['auprc']:.4f} "
@@ -265,14 +283,16 @@ def main() -> int:
         "condition": "A",
         "group": args.group,
         "le2": args.le2,
+        "scope": args.scope,
         "relations": relations,
         "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
         "backbone": args.backbone,
         "frac": args.frac,
-        "n_nodes": n_kept,
+        "n_target": n_target,
+        "n_universe": n_universe,
         "n_edges": n_edges,
-        "isolated_nodes": isolated,
-        "fraud_rate": float(fraud.mean()),
+        "isolated_nodes_in_target": isolated,
+        "fraud_rate_target": float(fraud.mean()),
         "n_features": len(feat_cols),
         "excluded_cols": args.exclude_cols,
         "epochs_run": epoch,
@@ -281,7 +301,7 @@ def main() -> int:
         "seed": args.seed,
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    out = args.out or (RESULTS_DIR / f"{args.group}_{'-'.join(relations)}_{args.backbone}.json")
+    out = args.out or (RESULTS_DIR / f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n저장: {out} | 총 {time.time()-t0:.0f}초")
