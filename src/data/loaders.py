@@ -144,3 +144,30 @@ def load_rayana_features(level: str | list[str] | None = "review") -> pd.DataFra
     cols = [c for c in feats.columns
             if c != "review_id" and meta[c]["level"] in want]
     return feats[["review_id"] + cols]
+
+
+def load_rayana_asof_features(year: int = 2014,
+                              level: str | list[str] | None = None) -> pd.DataFrame:
+    """작성 시점(as-of) 기준 Rayana Table 2 피처. `scripts/07_build_features_asof_2014.py` 산출물.
+
+    그 해 리뷰만 들어 있고(2014년 180,659행), 행 순서 = review_id 오름차순
+    = `graph_{year}/nodes.parquet` 행 순서 → 그래프 노드 i 의 피처 = i 번째 행.
+    37개 = review 16 + user 11 + product 10 (논문대로 BST 는 작성자에만 정의).
+    level 사용법은 load_rayana_features 와 같다 (None = 전체).
+    """
+    import json
+
+    path = PROCESSED / f"features_rayana_asof_{year}.parquet"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} 가 없습니다. `python scripts/07_build_features_asof_2014.py` 로 생성하세요.")
+    feats = pd.read_parquet(path)
+    if not feats["review_id"].is_monotonic_increasing:
+        raise ValueError("review_id 순서가 깨졌습니다. 재정렬하지 마세요.")
+    if level is None:
+        return feats
+    meta = json.loads(path.with_name(f"features_rayana_asof_{year}_meta.json")
+                      .read_text(encoding="utf-8"))
+    want = {level} if isinstance(level, str) else set(level)
+    cols = [c for c in feats.columns if c != "review_id" and meta[c]["level"] in want]
+    return feats[["review_id"] + cols]
