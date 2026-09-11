@@ -1,26 +1,37 @@
 """
 05_train_gnn_condition_a.py — 조건 A(구조/메타데이터) 바닐라 GNN 학습·평가
 
-조건 A = R-U-R(같은 작성자) 그래프 구조 + 수작업 피처(38차원) + 바닐라 GCN/GraphSAGE.
-9/2 미팅 피드백에 따라 CARE-GNN(강화학습) 대신 가장 순수한 구조 신호 기준선부터
-검증한다. 사기 서브유형별로 따로 돌려서(우선순위: 신규계정형 > 버스트형) 매트릭스의
-"A" 열을 채운다.
+조건 A = 관계 그래프 구조 + 수작업 피처(38차원) + 바닐라 GCN/GraphSAGE.
 
-그래프는 지정한 사기 유형(`--type-class`) 부분집합 안에서만 R-U-R 엣지를 만든다.
-`docs/데이터_확인결과_오동진.md` §6: R-T-R·R-S-R은 라벨 동질성이 무작위 수준이라
-쓰지 않음. `--exclude-cols singleton` 으로 라벨 정의에 쓰인 피처를 뺀 버전도 병행
-보고할 수 있다(9/2 피드백: 라벨 누수 방지 병행 보고 요청).
+**2026-09-11 재작성**: 구 버전(무방향 R-U-R, 임계값 3, 전체 연도)은 폐기.
+`scripts/06_build_graphs_2014.py`가 만든 2014년 과거 방향(temporal) 그래프
+3종(R-U-R/R-S-R/R-T-R, `data/processed/graph_2014/`)을 사용한다. 각 리뷰는
+자기보다 먼저 작성된 같은 관계의 리뷰에서만 메시지를 받으므로(미래 누수 차단),
+대칭 정규화 대신 `temporal_graph.row_normalize`(행 정규화)를 쓴다.
 
-사기 유형 부분집합은 겹침을 허용하는 불리언 플래그(`type_new`, `type_burst_kde`)로
-독립적으로 뽑는다(`scripts/04_add_burst_kde.py` 주석 참고: 상호배타 `type_class`는
-참고용일 뿐, 실제 실험은 각 플래그를 따로 씀). `--type-class burst`/`mixed`/`general`은
-`type_burst_kde` 컬럼이 필요하므로, 먼저 `python scripts/04_add_burst_kde.py` 로
-버스트형 재정의를 `reviews.parquet` 에 병합해야 한다.
+Phase 1-B(7가지 관계 조합) 실험은 `--relations`로 조합을 지정해 반복 실행한다:
+    rur / rsr / rtr / rur,rsr / rur,rtr / rsr,rtr / rur,rsr,rtr
+
+유형은 저활동(`--group low`, as-of 누적 리뷰 수 ≤1 = 작성자의 첫 리뷰) vs
+비저활동(`--group high`)으로 비교한다(오동진, 2026-09-11 확정). 그래프는
+지정한 그룹 부분집합 안에서만 남기고(2014년 전체 그래프를 그 그룹의 노드로
+재인덱싱), 그 부분그래프로 학습·평가한다 — 유형별로 독립된 미니 실험이라는
+기존 매트릭스 설계(신규계정형/버스트형을 각각 별도로 도는 방식)와 일관되게
+유지한 것. 그룹을 섞은 전체 그래프로 학습하고 그룹별로 평가만 나누는
+대안(전체 그래프 학습)도 고려할 수 있으나, 그러면 비저활동 유저의 신호가
+저활동 예측에 새어 들어와 "관계 자체의 정보 추가 효과"가 아니라 "이웃
+데이터가 많아진 효과"와 섞일 위험이 있어 채택하지 않았다 — 필요하면
+후속 논의.
+
+⚠️ `--exclude-cols`: 라벨 정의에 쓰인 피처(`singleton` 등)를 빼는 병행
+보고용(9/2 피드백). 현재 `features_handcrafted.parquet`는 오동진이 as-of
+방식으로 재계산 중(2026-09-11 기준 진행 중) — 완료 전까지 이 스크립트의
+결과는 잠정치다.
 
 사용 예:
-    python scripts/05_train_gnn_condition_a.py --type-class new
-    python scripts/05_train_gnn_condition_a.py --type-class new --exclude-cols singleton
-    python scripts/05_train_gnn_condition_a.py --type-class burst --backbone sage
+    python scripts/05_train_gnn_condition_a.py --group low --relations rur
+    python scripts/05_train_gnn_condition_a.py --group low --relations rur,rsr,rtr
+    python scripts/05_train_gnn_condition_a.py --group high --relations rsr --backbone sage
 """
 
 from __future__ import annotations
@@ -32,23 +43,22 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
+import scipy.sparse as sp
 import torch
 import torch.nn as nn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.data.loaders import load_handcrafted_features, load_reviews  # noqa: E402
+from src.data.loaders import load_handcrafted_features  # noqa: E402
 from src.evaluation.metrics import evaluate  # noqa: E402
-from src.features.structural.graph import (  # noqa: E402
-    build_rur_adjacency,
-    gcn_normalize,
-    mean_normalize,
-    scipy_to_torch_sparse,
-)
+from src.features.structural.graph import scipy_to_torch_sparse  # noqa: E402
+from src.features.structural.temporal_graph import RELATIONS, combine, row_normalize  # noqa: E402
 from src.models.gcn import VanillaGNN  # noqa: E402
 
-RESULTS_DIR = ROOT / "results" / "condition_a"
+GRAPH_DIR = ROOT / "data" / "processed" / "graph_2014"
+RESULTS_DIR = ROOT / "results" / "condition_a" / "phase1b"
 
 
 def stratified_split(fraud: np.ndarray, seed: int, val_frac: float = 0.15,
@@ -81,20 +91,43 @@ def subsample_users(user_ids: np.ndarray, frac: float, seed: int) -> np.ndarray:
     return np.isin(user_ids, picked)
 
 
+def load_graph_2014() -> tuple[pd.DataFrame, dict[str, sp.csr_matrix]]:
+    if not GRAPH_DIR.exists():
+        raise FileNotFoundError(
+            f"{GRAPH_DIR} 가 없습니다. `python scripts/06_build_graphs_2014.py` 로 먼저 생성하세요."
+        )
+    nodes = pd.read_parquet(GRAPH_DIR / "nodes.parquet")
+    adjs = {name: sp.load_npz(GRAPH_DIR / f"{name}.npz") for name in RELATIONS}
+    return nodes, adjs
+
+
+def build_group_mask(nodes: pd.DataFrame, group: str, le2: bool) -> np.ndarray:
+    col = "type_new_le2" if le2 else "type_new"
+    if group == "low":
+        return nodes[col].to_numpy() == 1
+    elif group == "high":
+        return nodes[col].to_numpy() == 0
+    return np.ones(len(nodes), dtype=bool)
+
+
+def subset_adjacency(adj: sp.csr_matrix, mask: np.ndarray) -> sp.csr_matrix:
+    """mask 로 선택된 노드끼리만 남긴 부분그래프. 로컬 인덱스가 0..n-1 로 재부여된다."""
+    idx = np.flatnonzero(mask)
+    return adj[idx][:, idx].tocsr()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--type-class", default="new",
-                    choices=["new", "burst", "mixed", "general", "all"],
-                    help="사기 서브유형 (기본: new = 신규계정형, 1순위). "
-                         "겹침 허용 플래그(type_new/type_burst_kde) 기준: "
-                         "new=type_new / burst=type_burst_kde / "
-                         "mixed=둘 다 / general=둘 다 아님")
+    ap.add_argument("--group", default="low", choices=["low", "high", "all"],
+                    help="저활동(low, as-of<=1, 1순위) / 비저활동(high) / all(그룹 구분 없이 2014 전체)")
+    ap.add_argument("--le2", action="store_true",
+                    help="저활동 임계값을 as-of<=1 대신 <=2 로(민감도 분석용, type_new_le2 컬럼)")
+    ap.add_argument("--relations", default="rur",
+                    help="쉼표구분 관계 조합 {rur,rsr,rtr} 중 선택 — Phase 1-B 7조합: "
+                         "rur / rsr / rtr / rur,rsr / rur,rtr / rsr,rtr / rur,rsr,rtr")
     ap.add_argument("--frac", type=float, default=1.0,
                     help="작성자 단위 표본 비율 (기본 1.0 = 전체). 빠른 반복 실험용")
-    ap.add_argument("--year", type=int, default=2014,
-                    help="분석 대상 연도 (기본 2014 — 9/9 팀 결정: 임의 샘플링 대신 "
-                         "연도 필터링. 0을 주면 연도 필터 없이 전체 기간 사용)")
     ap.add_argument("--backbone", default="gcn", choices=["gcn", "sage"])
     ap.add_argument("--hidden", type=int, default=64)
     ap.add_argument("--dropout", type=float, default=0.3)
@@ -107,69 +140,53 @@ def main() -> int:
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: singleton — 라벨 정의에 쓰인 피처)")
     ap.add_argument("--out", type=Path, default=None,
-                    help="결과 JSON 저장 경로 (기본: results/condition_a/<type>_<backbone>.json)")
+                    help="결과 JSON 저장 경로 (기본: results/condition_a/phase1b/<group>_<relations>_<backbone>.json)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
+    relations = [r.strip().lower() for r in args.relations.split(",") if r.strip()]
+    for r in relations:
+        if r not in RELATIONS:
+            raise ValueError(f"알 수 없는 관계: {r} (가능: {sorted(RELATIONS)})")
+    if not relations:
+        raise ValueError("--relations 가 비어있습니다.")
+
     t0 = time.time()
-    try:
-        reviews = load_reviews(
-            columns=["review_id", "user_id", "fraud", "type_new", "type_burst_kde", "year"])
-        has_burst_kde = True
-    except Exception:
-        reviews = load_reviews(columns=["review_id", "user_id", "fraud", "type_new", "year"])
-        has_burst_kde = False
-
+    print("[0/4] 2014년 그래프·노드·피처 로드")
+    nodes, adjs = load_graph_2014()
     feats = load_handcrafted_features()
-    if len(reviews) != len(feats):
-        raise ValueError(f"행 수 불일치: reviews {len(reviews)} != features {len(feats)}")
+    feats_idx = feats.set_index("review_id")
 
-    if args.type_class == "all":
-        type_mask = np.ones(len(reviews), dtype=bool)
-    elif args.type_class == "new":
-        type_mask = reviews["type_new"].to_numpy() == 1
-    else:
-        if not has_burst_kde:
-            raise ValueError(
-                "type_burst_kde 컬럼이 없습니다. 먼저 "
-                "`python scripts/04_add_burst_kde.py` 로 버스트형 재정의를 "
-                "reviews.parquet 에 병합하세요."
-            )
-        is_new = reviews["type_new"].to_numpy() == 1
-        is_burst = reviews["type_burst_kde"].to_numpy() == 1
-        if args.type_class == "burst":
-            type_mask = is_burst
-        elif args.type_class == "mixed":
-            type_mask = is_new & is_burst
-        else:  # general
-            type_mask = ~is_new & ~is_burst
-
-    sample_mask = subsample_users(reviews["user_id"].to_numpy(), args.frac, args.seed)
-    year_mask = (reviews["year"].to_numpy() == args.year) if args.year else np.ones(len(reviews), dtype=bool)
-    keep = type_mask & sample_mask & year_mask
+    group_mask = build_group_mask(nodes, args.group, args.le2)
+    sample_mask = subsample_users(nodes["user_id"].to_numpy(), args.frac, args.seed)
+    keep = group_mask & sample_mask
     n_kept = int(keep.sum())
     if n_kept < 100:
-        raise ValueError(f"부분집합이 너무 작습니다 (n={n_kept}). --frac 을 키우거나 --year 0(전체 기간)을 확인하세요.")
+        raise ValueError(f"부분집합이 너무 작습니다 (n={n_kept}). --frac 을 키우세요.")
 
-    user_ids = reviews.loc[keep, "user_id"].to_numpy()
-    fraud = reviews.loc[keep, "fraud"].to_numpy().astype("float32")
+    sub_nodes = nodes.loc[keep].reset_index(drop=True)
+    fraud = sub_nodes["fraud"].to_numpy().astype("float32")
 
     feat_cols = [c for c in feats.columns if c != "review_id" and c not in args.exclude_cols]
-    X = feats.loc[keep, feat_cols].to_numpy(dtype="float32")
-    print(f"[설정] type_class={args.type_class} year={args.year or '전체'} frac={args.frac} "
+    X = feats_idx.loc[sub_nodes["review_id"].to_numpy(), feat_cols].to_numpy(dtype="float32")
+
+    group_label = f"{args.group}{'(<=2)' if args.le2 else ''}"
+    print(f"[설정] group={group_label} relations={'+'.join(relations)} frac={args.frac} "
           f"n={n_kept:,} 사기율={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
 
-    print("[1/4] R-U-R 그래프 구성")
-    adj = build_rur_adjacency(user_ids)
+    print("[1/4] 관계 그래프 결합 및 부분그래프 추출")
+    combined = combine(adjs, relations)
+    adj = subset_adjacency(combined, keep)
     n_edges = adj.nnz
-    isolated = int((np.asarray(adj.sum(axis=1)).flatten() == 0).sum())
-    print(f"      엣지 {n_edges:,}개 | 고립 노드(엣지 0개) {isolated:,}개 "
+    indeg = np.asarray(adj.sum(axis=1)).ravel()
+    isolated = int((indeg == 0).sum())
+    print(f"      엣지 {n_edges:,}개 | 과거 이웃 0개(고립) {isolated:,}개 "
           f"({isolated/n_kept:.1%}) | {time.time()-t0:.0f}초")
 
-    norm_fn = gcn_normalize if args.backbone == "gcn" else mean_normalize
-    adj_norm = scipy_to_torch_sparse(norm_fn(adj))
+    self_loop = args.backbone == "gcn"
+    adj_norm = scipy_to_torch_sparse(row_normalize(adj, self_loop=self_loop))
 
     print("[2/4] train/val/test 분할 (사기율 유지, seed 고정)")
     train_mask, val_mask, test_mask = stratified_split(fraud, seed=args.seed)
@@ -246,10 +263,11 @@ def main() -> int:
 
     result = {
         "condition": "A",
-        "type_class": args.type_class,
-        "type_definition": "type_new/type_burst_kde flags (겹침 허용, scripts/04_add_burst_kde.py)",
+        "group": args.group,
+        "le2": args.le2,
+        "relations": relations,
+        "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
         "backbone": args.backbone,
-        "year": args.year or "all",
         "frac": args.frac,
         "n_nodes": n_kept,
         "n_edges": n_edges,
@@ -263,7 +281,7 @@ def main() -> int:
         "seed": args.seed,
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    out = args.out or (RESULTS_DIR / f"{args.type_class}_{args.backbone}.json")
+    out = args.out or (RESULTS_DIR / f"{args.group}_{'-'.join(relations)}_{args.backbone}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n저장: {out} | 총 {time.time()-t0:.0f}초")
