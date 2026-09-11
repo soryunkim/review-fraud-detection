@@ -26,10 +26,14 @@ Phase 1-B(7가지 관계 조합) 실험은 `--relations`로 조합을 지정해 
   두 scope의 차이 = "관계 자체의 순수 효과" vs "그 관계로 도달 가능한 전체
   이웃 데이터의 효과". 둘 다 실행해 비교하는 것을 권장.
 
-⚠️ `--exclude-cols`: 라벨 정의에 쓰인 피처(`singleton` 등)를 빼는 병행
-보고용(9/2 피드백). 현재 `features_handcrafted.parquet`는 오동진이 as-of
-방식으로 재계산 중(2026-09-11 기준 진행 중) — 완료 전까지 이 스크립트의
-결과는 잠정치다.
+피처는 `scripts/07_build_features_asof_2014.py`(오동진, 2026-09-11)가 만든
+as-of Rayana Table 2 피처 37개(`features_rayana_asof_2014.parquet`)를 쓴다
+— 미래 정보 없이 그 리뷰 작성 시점까지의 이력만으로 계산됨.
+
+⚠️ `--exclude-cols`: 라벨 정의에 쓰인 피처를 빼는 병행 보고용(9/2 피드백).
+`ISR`은 이제 "작성자의 첫 리뷰(=type_new)"와 동일해 `--group low/high`
+안에서는 상수(그룹 내 모든 행이 같은 값)가 되므로 사실상 자동으로 무해하지만,
+`--group all`로 두 그룹을 섞어 돌릴 때는 `--exclude-cols ISR`로 빼는 것을 권장.
 
 사용 예:
     python scripts/05_train_gnn_condition_a.py --group low --relations rur
@@ -54,7 +58,7 @@ import torch.nn as nn
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.data.loaders import load_handcrafted_features  # noqa: E402
+from src.data.loaders import load_rayana_asof_features  # noqa: E402
 from src.evaluation.metrics import evaluate  # noqa: E402
 from src.features.structural.graph import scipy_to_torch_sparse  # noqa: E402
 from src.features.structural.temporal_graph import RELATIONS, combine, row_normalize  # noqa: E402
@@ -163,7 +167,7 @@ def main() -> int:
     t0 = time.time()
     print("[0/4] 2014년 그래프·노드·피처 로드")
     nodes, adjs = load_graph_2014()
-    feats = load_handcrafted_features()
+    feats = load_rayana_asof_features()
     feats_idx = feats.set_index("review_id")
 
     group_mask = build_group_mask(nodes, args.group, args.le2)
