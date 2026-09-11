@@ -217,10 +217,15 @@ def main() -> int:
     test_idx = target_idx_in_universe[test_rel]
     print(f"      train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,}")
 
-    mu = X[train_idx].mean(axis=0, keepdims=True)
-    sigma = X[train_idx].std(axis=0, keepdims=True)
-    sigma[sigma == 0] = 1.0
-    X = (X - mu) / sigma
+    # float64 + 완화된 0-근사 판정(sigma < 1e-6): train 서브셋(예: 저활동형)에서는
+    # 상수인 피처(ISR, U_MNR 등)가 float32 계산에서 정확히 0이 아닌 극소값(~4e-5)으로
+    # 나올 수 있다. sigma == 0 만 걸러내면 이 극소값으로 나눠 scope=full처럼 표준화
+    # 대상 밖 이웃(값이 실제로 다양한 비저활동 리뷰)의 피처가 최대 수만 배로 폭주한다
+    # (오동진, 2026-09-11 — full scope epoch 1 loss 136 발견).
+    mu = X[train_idx].astype("float64").mean(axis=0, keepdims=True)
+    sigma = X[train_idx].astype("float64").std(axis=0, keepdims=True)
+    sigma[sigma < 1e-6] = 1.0
+    X = ((X - mu) / sigma).astype("float32")
 
     x_t = torch.from_numpy(X)
     y_t = torch.from_numpy(fraud_all)
