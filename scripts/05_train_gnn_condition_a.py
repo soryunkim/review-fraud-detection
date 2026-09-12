@@ -87,6 +87,45 @@ def stratified_split(fraud: np.ndarray, seed: int, val_frac: float = 0.15,
     return train, val, test
 
 
+def user_stratified_split(user_ids: np.ndarray, fraud: np.ndarray, seed: int,
+                          val_frac: float = 0.15, test_frac: float = 0.15
+                          ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """작성자 단위 분할 — 한 작성자의 리뷰는 train/val/test 중 한 곳에만 들어간다.
+
+    리뷰 단위 무작위 분할(`stratified_split`)은 같은 작성자의 다른 리뷰가 train 에
+    들어가므로, 모델이 "이 작성자는 사기꾼"을 외워서 맞히는 효과가 성능에 섞인다
+    (`results/mlp_baseline/README.md` 주의사항 3번). 비저활동형에서 작성자 수준
+    피처와 R-U-R 의 높은 점수가 이 효과에 오염됐는지 검증하기 위한 분할 방식이다.
+
+    사기 리뷰를 가진 작성자 / 없는 작성자 두 층으로 나눈 뒤 각 층에서 작성자를 섞어
+    리뷰 수 기준 쿼터(test 15% → val 15% → 나머지 train)를 채운다. 리뷰 단위 분할만큼
+    사기율이 정확히 맞지는 않으므로, 호출부에서 실제 분할 사기율을 함께 기록한다.
+    저활동형은 작성자당 리뷰가 1건이라 이 분할이 리뷰 단위 분할과 사실상 같다(대조군).
+    """
+    rng = np.random.default_rng(seed)
+    uniq, inv = np.unique(user_ids, return_inverse=True)
+    cnt = np.bincount(inv, minlength=len(uniq))
+    fcnt = np.bincount(inv, weights=fraud, minlength=len(uniq))
+    assign = np.zeros(len(uniq), dtype=np.int8)          # 0=train, 1=val, 2=test
+    for stratum in (True, False):                        # 사기 보유 작성자부터
+        idx_u = np.flatnonzero((fcnt > 0) == stratum)
+        rng.shuffle(idx_u)
+        total = cnt[idx_u].sum()
+        q_test, q_val = total * test_frac, total * val_frac
+        acc_t = acc_v = 0
+        for u in idx_u:
+            if acc_t < q_test:
+                assign[u] = 2
+                acc_t += cnt[u]
+            elif acc_v < q_val:
+                assign[u] = 1
+                acc_v += cnt[u]
+            else:
+                assign[u] = 0
+    a = assign[inv]
+    return a == 0, a == 1, a == 2
+
+
 def subsample_users(user_ids: np.ndarray, frac: float, seed: int) -> np.ndarray:
     """작성자 단위 표본(불리언 마스크). 다작 작성자의 리뷰가 반쪼가리로 잘려 R-U-R
     구조와 라벨이 왜곡되는 것을 막기 위해 항상 작성자 단위로 자른다."""
@@ -148,6 +187,10 @@ def main() -> int:
     ap.add_argument("--patience", type=int, default=20,
                     help="val AUROC 개선 없이 버틸 최대 epoch 수")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--split", default="review", choices=["review", "user"],
+                    help="review(기본, 기존 결과와 동일): 리뷰 단위 무작위 분할. "
+                         "user: 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해 "
+                         "\"작성자 암기\" 효과를 제거(검증용). 결과 파일명에 _usersplit 이 붙는다.")
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: singleton — 라벨 정의에 쓰인 피처)")
     ap.add_argument("--out", type=Path, default=None,
@@ -211,11 +254,17 @@ def main() -> int:
 
     print("[2/4] train/val/test 분할 (target 노드에서만, 사기율 유지, seed 고정)")
     target_idx_in_universe = np.flatnonzero(target_local)
-    train_rel, val_rel, test_rel = stratified_split(fraud, seed=args.seed)
+    if args.split == "user":
+        train_rel, val_rel, test_rel = user_stratified_split(
+            sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)
+    else:
+        train_rel, val_rel, test_rel = stratified_split(fraud, seed=args.seed)
     train_idx = target_idx_in_universe[train_rel]
     val_idx = target_idx_in_universe[val_rel]
     test_idx = target_idx_in_universe[test_rel]
-    print(f"      train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,}")
+    print(f"      train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,} "
+          f"| 사기율 {fraud[train_rel].mean():.1%}/{fraud[val_rel].mean():.1%}/{fraud[test_rel].mean():.1%} "
+          f"(split={args.split})")
 
     # float64 + 완화된 0-근사 판정(sigma < 1e-6): train 서브셋(예: 저활동형)에서는
     # 상수인 피처(ISR, U_MNR 등)가 float32 계산에서 정확히 0이 아닌 극소값(~4e-5)으로
@@ -312,9 +361,14 @@ def main() -> int:
         "val": val_final,
         "test": test_final,
         "seed": args.seed,
+        "split": args.split,
+        "fraud_rate_train": float(fraud[train_rel].mean()),
+        "fraud_rate_test": float(fraud[test_rel].mean()),
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    out = args.out or (RESULTS_DIR / f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}.json")
+    suffix = "_usersplit" if args.split == "user" else ""
+    out = args.out or (RESULTS_DIR /
+                       f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n저장: {out} | 총 {time.time()-t0:.0f}초")

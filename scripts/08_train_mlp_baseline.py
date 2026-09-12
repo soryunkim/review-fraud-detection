@@ -76,7 +76,8 @@ def load_features(nodes: pd.DataFrame, features: str) -> tuple[np.ndarray, list[
     return f[cols].to_numpy(dtype=np.float32), cols
 
 
-def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int) -> dict:
+def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
+        split: str = "review") -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     target = b05.build_group_mask(nodes, group, le2=False)
@@ -84,7 +85,13 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int) -> dict:
     fraud = nodes.loc[target, "fraud"].to_numpy().astype("float32")
     n = len(X)
 
-    train_idx, val_idx, test_idx = (np.flatnonzero(m) for m in b05.stratified_split(fraud, seed=seed))
+    if split == "user":
+        # 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해
+        # "작성자 암기" 효과를 제거한다(README 주의사항 3번 검증용).
+        masks = b05.user_stratified_split(nodes.loc[target, "user_id"].to_numpy(), fraud, seed=seed)
+    else:
+        masks = b05.stratified_split(fraud, seed=seed)
+    train_idx, val_idx, test_idx = (np.flatnonzero(m) for m in masks)
 
     mu = X[train_idx].astype("float64").mean(axis=0, keepdims=True)
     sigma = X[train_idx].astype("float64").std(axis=0, keepdims=True)
@@ -144,6 +151,9 @@ def main() -> int:
     ap.add_argument("--groups", nargs="*", default=GROUPS, choices=GROUPS)
     ap.add_argument("--features", nargs="*", default=FEATURE_SETS, choices=FEATURE_SETS)
     ap.add_argument("--seeds", nargs="*", type=int, default=SEEDS)
+    ap.add_argument("--split", default="review", choices=["review", "user"],
+                    help="review(기본, 기존 결과와 동일) / user(작성자 단위 분할 — "
+                         "결과 파일명에 _usersplit 접미사가 붙는다)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -154,13 +164,15 @@ def main() -> int:
         X_all, cols = load_features(nodes, features)
         for group in args.groups:
             for seed in args.seeds:
-                r = run(nodes, X_all, group, seed)
+                r = run(nodes, X_all, group, seed, split=args.split)
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,
+                          "split": args.split,
                           "feature_columns": cols if features != "text" else "emb_minilm_384 (384)",
                           "hyperparams": {"hidden": HIDDEN, "dropout": DROPOUT, "lr": LR,
                                           "weight_decay": WD, "epochs": EPOCHS, "patience": PATIENCE}})
-                out = OUT_DIR / f"{group}_{features}_seed{seed}.json"
+                sfx = "_usersplit" if args.split == "user" else ""
+                out = OUT_DIR / f"{group}_{features}_seed{seed}{sfx}.json"
                 out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
                 t = r["test"]
                 print(f"{group:<5} {features:<8} seed {seed:<3} | AUROC {t['auroc']:.4f} "
@@ -187,7 +199,8 @@ def main() -> int:
             row["seed42"] = s42.loc[(a.group, a.features), ["auroc", "auprc", "macro_f1", "fraud_f1_fixed"]].to_dict()
         summary["rows"].append(row)
     if set(args.groups) == set(GROUPS) and set(args.features) == set(FEATURE_SETS):
-        (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+        name = "summary_usersplit.json" if args.split == "user" else "summary.json"
+        (OUT_DIR / name).write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n요약 (test, seed 평균 ± 표준편차)")
     for _, a in agg.iterrows():
         print(f"  {a.group:<5} {a.features:<8} ({a.n_features:>3}개) PR-AUC {a.auprc_mean:.4f}±{a.auprc_std:.4f} "
