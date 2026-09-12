@@ -91,6 +91,9 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
         # 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해
         # "작성자 암기" 효과를 제거한다(README 주의사항 3번 검증용).
         masks = b05.user_stratified_split(nodes.loc[target, "user_id"].to_numpy(), fraud, seed=seed)
+    elif split == "time":
+        # 시간 단위 분할 — 1~9월 train / 10~11월 val / 12월 test (주 결과용, 05 와 동일 함수)
+        masks = b05.temporal_split(nodes.loc[target, "date"])
     else:
         masks = b05.stratified_split(fraud, seed=seed)
     train_idx, val_idx, test_idx = (np.flatnonzero(m) for m in masks)
@@ -155,9 +158,10 @@ def main() -> int:
     ap.add_argument("--seeds", nargs="*", type=int, default=SEEDS)
     ap.add_argument("--drop-sameday-ties", action="store_true",
                     help="작성자 첫날 동률 리뷰를 대상에서 제외(05 와 동일). 파일명에 _notie")
-    ap.add_argument("--split", default="review", choices=["review", "user"],
+    ap.add_argument("--split", default="review", choices=["review", "user", "time"],
                     help="review(기본, 기존 결과와 동일) / user(작성자 단위 분할 — "
-                         "결과 파일명에 _usersplit 접미사가 붙는다)")
+                         "결과 파일명에 _usersplit 접미사가 붙는다) / time(1~9월 train, "
+                         "10~11월 val, 12월 test — 접미사 _timesplit)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -176,7 +180,8 @@ def main() -> int:
                           "feature_columns": cols if features != "text" else "emb_minilm_384 (384)",
                           "hyperparams": {"hidden": HIDDEN, "dropout": DROPOUT, "lr": LR,
                                           "weight_decay": WD, "epochs": EPOCHS, "patience": PATIENCE}})
-                sfx = ("_usersplit" if args.split == "user" else "") + ("_notie" if args.drop_sameday_ties else "")
+                sfx = ({"user": "_usersplit", "time": "_timesplit"}.get(args.split, "")
+                       + ("_notie" if args.drop_sameday_ties else ""))
                 out = OUT_DIR / f"{group}_{features}_seed{seed}{sfx}.json"
                 out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
                 t = r["test"]
@@ -204,7 +209,7 @@ def main() -> int:
             row["seed42"] = s42.loc[(a.group, a.features), ["auroc", "auprc", "macro_f1", "fraud_f1_fixed"]].to_dict()
         summary["rows"].append(row)
     if set(args.groups) == set(GROUPS) and set(args.features) == set(FEATURE_SETS):
-        name = "summary_usersplit.json" if args.split == "user" else "summary.json"
+        name = {"user": "summary_usersplit.json", "time": "summary_timesplit.json"}.get(args.split, "summary.json")
         (OUT_DIR / name).write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n요약 (test, seed 평균 ± 표준편차)")
     for _, a in agg.iterrows():

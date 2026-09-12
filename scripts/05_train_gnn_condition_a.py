@@ -126,6 +126,24 @@ def user_stratified_split(user_ids: np.ndarray, fraud: np.ndarray, seed: int,
     return a == 0, a == 1, a == 2
 
 
+TIME_SPLIT_MONTHS = {"train": range(1, 10), "val": (10, 11), "test": (12,)}
+
+
+def temporal_split(dates: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """시간 단위 분할 — 2014년 1~9월 train / 10~11월 val / 12월 test (오동진, 2026-09-12).
+
+    "미래 정보만 차단"한 분할로, 배포 상황(과거로 학습해 새 리뷰를 판정)에 가장 가깝고
+    "작성 시점까지의 이력만" 원칙과 맞는다 → 주 결과 보고용(9/12 보고서 §10.1).
+    같은 작성자의 과거 리뷰가 train 에 있는 것은 허용된다(배포 시에도 알 수 있는 정보).
+    그래프가 과거 방향이라 train 노드는 val/test 기간 노드로부터 메시지를 받지 않는다.
+    seed 와 무관하게 분할은 고정이다(seed 는 초기화·dropout 에만 영향).
+    """
+    m = pd.to_datetime(dates).dt.month.to_numpy()
+    return (np.isin(m, list(TIME_SPLIT_MONTHS["train"])),
+            np.isin(m, TIME_SPLIT_MONTHS["val"]),
+            np.isin(m, TIME_SPLIT_MONTHS["test"]))
+
+
 def subsample_users(user_ids: np.ndarray, frac: float, seed: int) -> np.ndarray:
     """작성자 단위 표본(불리언 마스크). 다작 작성자의 리뷰가 반쪼가리로 잘려 R-U-R
     구조와 라벨이 왜곡되는 것을 막기 위해 항상 작성자 단위로 자른다."""
@@ -210,10 +228,12 @@ def main() -> int:
                     help="작성자 첫날 동률 리뷰(2014년 18,172건)를 학습·평가 대상에서 제외. "
                          "라벨이 review_id 순서로 갈리고 R-U-R 이웃이 전부 같은 날인 경계 리뷰들이라, "
                          "남은 신호가 여기서 오는지 확인하는 용도. 파일명에 _notie 가 붙는다.")
-    ap.add_argument("--split", default="review", choices=["review", "user"],
+    ap.add_argument("--split", default="review", choices=["review", "user", "time"],
                     help="review(기본, 기존 결과와 동일): 리뷰 단위 무작위 분할. "
                          "user: 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해 "
-                         "\"작성자 암기\" 효과를 제거(검증용). 결과 파일명에 _usersplit 이 붙는다.")
+                         "\"작성자 암기\" 효과를 제거(검증용). 결과 파일명에 _usersplit 이 붙는다. "
+                         "time: 시간 단위 분할 — 1~9월 train / 10~11월 val / 12월 test(주 결과용). "
+                         "결과 파일명에 _timesplit 이 붙는다.")
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: singleton — 라벨 정의에 쓰인 피처)")
     ap.add_argument("--out", type=Path, default=None,
@@ -285,6 +305,8 @@ def main() -> int:
     if args.split == "user":
         train_rel, val_rel, test_rel = user_stratified_split(
             sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)
+    elif args.split == "time":
+        train_rel, val_rel, test_rel = temporal_split(sub_nodes.loc[target_local, "date"])
     else:
         train_rel, val_rel, test_rel = stratified_split(fraud, seed=args.seed)
     train_idx = target_idx_in_universe[train_rel]
@@ -395,7 +417,8 @@ def main() -> int:
         "fraud_rate_test": float(fraud[test_rel].mean()),
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    suffix = ("_usersplit" if args.split == "user" else "") + ("_notie" if args.drop_sameday_ties else "")
+    suffix = ({"user": "_usersplit", "time": "_timesplit"}.get(args.split, "")
+              + ("_notie" if args.drop_sameday_ties else ""))
     out = args.out or (RESULTS_DIR /
                        f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
