@@ -147,6 +147,25 @@ def load_graph_2014() -> tuple[pd.DataFrame, dict[str, sp.csr_matrix]]:
     return nodes, adjs
 
 
+def sameday_tie_mask(nodes: pd.DataFrame) -> np.ndarray:
+    """작성자의 '첫날'에 2건 이상 쓴 리뷰 — 저활동/비저활동 라벨이 같은 날 안에서
+    review_id(=CSV 행 순서)로 갈리는 경계 리뷰들.
+
+    2014년 18,172건이 해당하며 저활동 7,375 / 비저활동 10,797 로 나뉜다. 그런데
+    사기율은 저활동(동률 아님) 20.9%, 저활동 동률 20.5%, 비저활동 동률 21.0%,
+    비저활동 나머지 4.6% 로, 비저활동으로 분류된 10,797건이 사실상 저활동처럼
+    행동한다. 게다가 이 10,797건은 **전부**(100%) R-U-R 과거 이웃이 같은 날
+    리뷰뿐이다 — 즉 그 엣지의 시간 방향이 review_id 순서에만 의존한다.
+    `--drop-sameday-ties` 로 이 리뷰들을 학습·평가 대상에서 빼고 결과가 어떻게
+    달라지는지 확인한다(그래프에는 남으므로 이웃으로서의 역할은 유지)."""
+    rev = pd.read_parquet(ROOT / "data" / "processed" / "reviews.parquet",
+                          columns=["review_id", "user_id", "date"])
+    d = pd.to_datetime(rev["date"]).dt.normalize()
+    tie = (d == rev.groupby("user_id")["date"].transform("min").pipe(pd.to_datetime).dt.normalize()) &           (rev.groupby([rev.user_id, d])["review_id"].transform("size") > 1)
+    m = dict(zip(rev["review_id"].to_numpy(), tie.to_numpy()))
+    return nodes["review_id"].map(m).fillna(False).to_numpy().astype(bool)
+
+
 def build_group_mask(nodes: pd.DataFrame, group: str, le2: bool) -> np.ndarray:
     col = "type_new_le2" if le2 else "type_new"
     if group == "low":
@@ -187,6 +206,10 @@ def main() -> int:
     ap.add_argument("--patience", type=int, default=20,
                     help="val AUROC 개선 없이 버틸 최대 epoch 수")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--drop-sameday-ties", action="store_true",
+                    help="작성자 첫날 동률 리뷰(2014년 18,172건)를 학습·평가 대상에서 제외. "
+                         "라벨이 review_id 순서로 갈리고 R-U-R 이웃이 전부 같은 날인 경계 리뷰들이라, "
+                         "남은 신호가 여기서 오는지 확인하는 용도. 파일명에 _notie 가 붙는다.")
     ap.add_argument("--split", default="review", choices=["review", "user"],
                     help="review(기본, 기존 결과와 동일): 리뷰 단위 무작위 분할. "
                          "user: 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해 "
@@ -214,6 +237,11 @@ def main() -> int:
     feats_idx = feats.set_index("review_id")
 
     group_mask = build_group_mask(nodes, args.group, args.le2)
+    if args.drop_sameday_ties:
+        ties = sameday_tie_mask(nodes)
+        n_drop = int((group_mask & ties).sum())
+        group_mask = group_mask & ~ties
+        print(f"      첫날 동률 리뷰 {n_drop:,}건을 대상에서 제외(그래프에는 유지)")
     sample_mask = subsample_users(nodes["user_id"].to_numpy(), args.frac, args.seed)
     target = group_mask & sample_mask   # 학습/평가 대상(그룹) — 항상 이 노드들로만 지도학습·채점
     n_target = int(target.sum())
@@ -362,11 +390,12 @@ def main() -> int:
         "test": test_final,
         "seed": args.seed,
         "split": args.split,
+        "drop_sameday_ties": args.drop_sameday_ties,
         "fraud_rate_train": float(fraud[train_rel].mean()),
         "fraud_rate_test": float(fraud[test_rel].mean()),
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    suffix = "_usersplit" if args.split == "user" else ""
+    suffix = ("_usersplit" if args.split == "user" else "") + ("_notie" if args.drop_sameday_ties else "")
     out = args.out or (RESULTS_DIR /
                        f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}.json")
     out.parent.mkdir(parents=True, exist_ok=True)

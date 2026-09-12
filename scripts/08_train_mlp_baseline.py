@@ -77,10 +77,12 @@ def load_features(nodes: pd.DataFrame, features: str) -> tuple[np.ndarray, list[
 
 
 def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
-        split: str = "review") -> dict:
+        split: str = "review", drop_ties: bool = False) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     target = b05.build_group_mask(nodes, group, le2=False)
+    if drop_ties:
+        target = target & ~b05.sameday_tie_mask(nodes)
     X = X_all[target]
     fraud = nodes.loc[target, "fraud"].to_numpy().astype("float32")
     n = len(X)
@@ -151,6 +153,8 @@ def main() -> int:
     ap.add_argument("--groups", nargs="*", default=GROUPS, choices=GROUPS)
     ap.add_argument("--features", nargs="*", default=FEATURE_SETS, choices=FEATURE_SETS)
     ap.add_argument("--seeds", nargs="*", type=int, default=SEEDS)
+    ap.add_argument("--drop-sameday-ties", action="store_true",
+                    help="작성자 첫날 동률 리뷰를 대상에서 제외(05 와 동일). 파일명에 _notie")
     ap.add_argument("--split", default="review", choices=["review", "user"],
                     help="review(기본, 기존 결과와 동일) / user(작성자 단위 분할 — "
                          "결과 파일명에 _usersplit 접미사가 붙는다)")
@@ -164,14 +168,15 @@ def main() -> int:
         X_all, cols = load_features(nodes, features)
         for group in args.groups:
             for seed in args.seeds:
-                r = run(nodes, X_all, group, seed, split=args.split)
+                r = run(nodes, X_all, group, seed, split=args.split,
+                        drop_ties=args.drop_sameday_ties)
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,
                           "split": args.split,
                           "feature_columns": cols if features != "text" else "emb_minilm_384 (384)",
                           "hyperparams": {"hidden": HIDDEN, "dropout": DROPOUT, "lr": LR,
                                           "weight_decay": WD, "epochs": EPOCHS, "patience": PATIENCE}})
-                sfx = "_usersplit" if args.split == "user" else ""
+                sfx = ("_usersplit" if args.split == "user" else "") + ("_notie" if args.drop_sameday_ties else "")
                 out = OUT_DIR / f"{group}_{features}_seed{seed}{sfx}.json"
                 out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
                 t = r["test"]
