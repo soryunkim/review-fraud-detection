@@ -383,6 +383,23 @@ def main() -> None:
     print(f"n={both.sum():,}  1건비율={(d14.loc[both,'local_count']==1).mean()*100:.1f}%")
     ingroup_report(d14, "교집합(최종)", both)
 
+    # ── 확인: 교집합에 "실제로 몰린 경우"만 남기면? (민섭) ──────────────
+    # 소륜 문서 §3.2는 "직전90일 기준에 최소건수를 얹으면 lift가 깎이므로
+    # 1건짜리가 진짜 신호를 담고 있다"고 해석했으나, 오동진 지적대로 이는
+    # 거꾸로 읽은 것이다 — 90일간 조용하다 온 1건은 정의상 "몰림"이 아니다.
+    # 다만 그 1.07x 는 "직전90일 기준 + count>=3" 모집단에서 나온 값이라
+    # 최종 교집합과는 다른 집단이다. 교집합 자체에 최소건수를 얹어 확인한다.
+    print()
+    print("=== 확인: 최종 교집합 + 최근 7일 최소 건수 (민섭) ===")
+    lc = d14["local_count"]
+    print(f"교집합 내 local_count 분포: "
+          f"1건 {(lc[both]==1).mean()*100:.1f}%  2건 {(lc[both]==2).mean()*100:.1f}%  "
+          f"3건 이상 {(lc[both]>=3).mean()*100:.1f}%  (중앙값 {lc[both].median():.0f})")
+    for k in (1, 2, 3, 5):
+        sel = both & (lc >= k)
+        print(f"  count>={k}: n={int(sel.sum()):>6,}")
+        ingroup_report(d14, f"교집합+count>={k}", sel)
+
     dec = d14["date"].dt.month == 12
     burst_nonnew = both & (~d14["is_new"])
     print(
