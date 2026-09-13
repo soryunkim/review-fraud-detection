@@ -1,0 +1,68 @@
+{
+  "name": "high_rating_deviation_v2_excluded",
+  "files_a": [
+    "high_rur_sage_full_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet",
+    "high_rur_sage_full_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT_seed0.parquet",
+    "high_rur_sage_full_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT_seed1.parquet",
+    "high_rur_sage_full_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT_seed2.parquet",
+    "high_rur_sage_full_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT_seed3.parquet"
+  ],
+  "files_b": [
+    "high_all_seed0_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet",
+    "high_all_seed1_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet",
+    "high_all_seed2_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet",
+    "high_all_seed3_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet",
+    "high_all_seed42_timesplit_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet"
+  ],
+  "n_test": 671,
+  "n_fraud_test": 73,
+  "base_rate_test": 0.10879284649776454,
+  "auprc_a_by_seed": [
+    0.3019,
+    0.305,
+    0.3051,
+    0.3183,
+    0.2873
+  ],
+  "auprc_b_by_seed": [
+    0.285,
+    0.2833,
+    0.2919,
+    0.3284,
+    0.3248
+  ],
+  "auprc_a_mean": 0.30351845851963843,
+  "auprc_b_mean": 0.3026637370604983,
+  "delta_mean": 0.0008547214591401175,
+  "delta_by_seed_pair": [
+    0.0169,
+    0.0217,
+    0.0132,
+    -0.01,
+    -0.0375
+  ],
+  "score_corr_pearson": 0.8339400846702733,
+  "score_corr_spearman": 0.8273662769821322,
+  "ci95_delta_test_only": [
+    -0.055626239212703925,
+    0.059200094293035965
+  ],
+  "ci95_delta_seed_and_test": [
+    -0.06157156145225368,
+    0.06275124346024778
+  ],
+  "halfwidth_delta_seed_and_test": 0.062161402456250736,
+  "share_delta_le_0_seed_and_test": 0.4485,
+  "ci95_auprc_a_alone": [
+    0.2298999520537016,
+    0.41150008716191633
+  ],
+  "ci95_auprc_b_alone": [
+    0.22704807899260424,
+    0.4137962121296736
+  ],
+  "halfwidth_auprc_a_alone": 0.09080006755410737,
+  "n_boot": 2000,
+  "boot_seed": 0,
+  "note": "Δ = A 평균 − B 평균 (seed 평균 PR-AUC). test_only 는 test 표본만, seed_and_test 는 seed 까지 복원추출"
+}
