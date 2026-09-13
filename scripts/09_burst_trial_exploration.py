@@ -145,6 +145,51 @@ def compute_rating_signal(df: pd.DataFrame) -> pd.DataFrame:
     return work[["review_id", "is_rating_anom"]]
 
 
+MIN_PAST_REVIEWS = 20  # 오동진 제안 — 민감도 확인 결과(10/20/30건) 거의 무차이
+
+
+def compute_rating_signal_v2(df: pd.DataFrame) -> pd.DataFrame:
+    """방향별 평점 이탈(2026-09-13, 오동진 재정의).
+
+    기존 is_rating_anom(RDEV_THRESHOLD=1.5, 절대·자기포함 평균)은 (a) 임계값 출처가
+    불분명하고(버스트형 때와 같은 "인용 오기" 패턴) (b) 자기 자신이 평균에 포함돼
+    이탈을 과소평가하고 (c) 방향(깎기/띄우기)을 구분하지 않아 서로 다른 두 현상을
+    섞었다. 재정의:
+      - 기준선 = 그 리뷰 이전(자기 제외) 가게 평균, 과거 리뷰 20건 미만이면 판정 불가(False)
+      - dev = rating − 기준선 (부호 유지)
+      - 임계값 = 2014년 이전 & eligible 리뷰의 dev 분포에서 하위/상위 5%(및 10%) —
+        분석 대상 연도(2014)와 겹치지 않는 기간으로 미리 정해, 사기율을 보고 고르지 않음
+      - 검증값(오동진·소륜 일치): 5% 임계 -2.24/+1.23, 2014년 10,402/9,230건
+    """
+    work = df.sort_values(["prod_id", "date", "review_id"]).reset_index(drop=True)
+    work["cum_n"] = work.groupby("prod_id").cumcount()  # 자기 제외 과거 리뷰 수
+    work["cum_sum"] = work.groupby("prod_id")["rating"].cumsum() - work["rating"]
+    work["past_avg"] = work["cum_sum"] / work["cum_n"].replace(0, np.nan)
+    work["eligible"] = work["cum_n"] >= MIN_PAST_REVIEWS
+    work["dev"] = work["rating"] - work["past_avg"]
+
+    calib = work[(work["year"] < 2014) & work["eligible"]]
+    q05, q95 = calib["dev"].quantile([0.05, 0.95])
+    q10, q90 = calib["dev"].quantile([0.10, 0.90])
+
+    down5 = work["eligible"] & (work["dev"] <= q05)
+    up5 = work["eligible"] & (work["dev"] >= q95)
+    down10 = work["eligible"] & (work["dev"] <= q10)
+    up10 = work["eligible"] & (work["dev"] >= q90)
+
+    return pd.DataFrame(
+        {
+            "review_id": work["review_id"],
+            "is_rating_down": down5.fillna(False).astype(bool),
+            "is_rating_up": up5.fillna(False).astype(bool),
+            "is_rating_deviation_v2": (down5 | up5).fillna(False).astype(bool),
+            "is_rating_down_10": down10.fillna(False).astype(bool),
+            "is_rating_up_10": up10.fillna(False).astype(bool),
+            "is_rating_deviation_v2_10": (down10 | up10).fillna(False).astype(bool),
+        }
+    )
+
+
 def compute_is_new(df: pd.DataFrame) -> pd.Series:
     """저활동형(as-of 누적 리뷰수<=1, 즉 작성자의 첫 리뷰) — 겹침 확인용."""
     work = df.sort_values(["user_id", "date", "review_id"])
@@ -169,8 +214,8 @@ def ingroup_report(d14: pd.DataFrame, name: str, mask: pd.Series) -> None:
         )
 
 
-def build_labels(res: pd.DataFrame) -> pd.DataFrame:
-    """review_id별 최종 라벨 3컬럼. 전체 이력(연도 무관) 기준 — 라벨은 전체 데이터에서
+def build_labels(res: pd.DataFrame, rating_v2: pd.DataFrame) -> pd.DataFrame:
+    """review_id별 최종 라벨 컬럼. 전체 이력(연도 무관) 기준 — 라벨은 전체 데이터에서
     계산한다는 프로젝트 원칙(experiment_matrix.md)을 따른다. elapsed==0(그 상점의
     첫 리뷰)은 평생평균 기준선이 정의상 불안정해 버스트 판정 대상에서 제외한다.
     """
@@ -178,14 +223,15 @@ def build_labels(res: pd.DataFrame) -> pd.DataFrame:
     evaluable = res["elapsed"] >= 1
     is_burst = evaluable & valid90 & (res["pval_life"] < 0.01) & (res["pval_90"] < 0.01)
     is_rating = res["is_rating_anom"]
-    return pd.DataFrame(
+    out = pd.DataFrame(
         {
             "review_id": res["review_id"],
             "is_burst": is_burst.fillna(False).astype(bool),
-            "is_rating_deviation": is_rating.astype(bool),
+            "is_rating_deviation": is_rating.astype(bool),  # 구버전, 보존(오동진 지시)
             "is_burst_and_rating": (is_burst.fillna(False) & is_rating).astype(bool),
         }
     )
+    return out.merge(rating_v2, on="review_id", how="left")
 
 
 def report_dormant_case(res: pd.DataFrame) -> None:
@@ -230,16 +276,18 @@ def main() -> None:
 
     time_sig = compute_time_signal(df)
     rating_sig = compute_rating_signal(df)
+    rating_v2 = compute_rating_signal_v2(df)
     is_new = compute_is_new(df)
 
     res = time_sig.merge(df[["review_id", "fraud", "year", "date"]], on="review_id")
     res = res.merge(rating_sig, on="review_id")
+    res = res.merge(rating_v2, on="review_id")
 
     is_new_map = pd.Series(is_new, index=df["review_id"].values)
     res["is_new"] = res["review_id"].map(is_new_map)
 
     if args.write_labels:
-        labels = build_labels(res)
+        labels = build_labels(res, rating_v2)
         labels.to_parquet(LABELS_OUT, index=False)
         print(f"라벨 저장 완료: {LABELS_OUT} ({len(labels):,}행)")
         print(
@@ -247,7 +295,26 @@ def main() -> None:
             f"is_rating_deviation={labels['is_rating_deviation'].sum():,}  "
             f"is_burst_and_rating={labels['is_burst_and_rating'].sum():,}"
         )
+        print(
+            f"  is_rating_down={labels['is_rating_down'].sum():,}  "
+            f"is_rating_up={labels['is_rating_up'].sum():,}  "
+            f"is_rating_deviation_v2={labels['is_rating_deviation_v2'].sum():,}"
+        )
+        print(
+            f"  (10%) is_rating_down_10={labels['is_rating_down_10'].sum():,}  "
+            f"is_rating_up_10={labels['is_rating_up_10'].sum():,}  "
+            f"is_rating_deviation_v2_10={labels['is_rating_deviation_v2_10'].sum():,}"
+        )
         print()
+
+    print("=== 평점 이탈형 v2 검증 (오동진 확인값과 대조, 2014년) ===")
+    d14_check = res[res["year"] == 2014]
+    print(
+        f"is_rating_down n={d14_check['is_rating_down'].sum():,}  "
+        f"is_rating_up n={d14_check['is_rating_up'].sum():,}  "
+        f"(확인값: 10,402 / 9,230)"
+    )
+    print()
 
     d14 = res[(res["year"] == 2014) & (res["elapsed"] >= 1)].copy()
     valid90 = d14["base90_days"] >= 30
