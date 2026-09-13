@@ -357,6 +357,15 @@ def main() -> None:
     print()
     ingroup_report(d14, "AND(시간 p<0.01 + 평점형)", (d14["pval_life"] < 0.01) & d14["is_rating_anom"])
 
+    # 평점 이탈형(v2)은 시간 신호와 무관하므로, elapsed>=1 제약이 없는 2014년
+    # 전체를 그룹 기준선으로 쓴다(오동진 매트릭스 관례와 일치, 2026-09-13 확인).
+    d14_all = res[res["year"] == 2014].copy()
+    print()
+    print("=== 평점 이탈형 v2, 그룹별 in-group lift (기준선: 2014년 그룹 전체) ===")
+    ingroup_report(d14_all, "깎기(is_rating_down, 5%)", d14_all["is_rating_down"])
+    ingroup_report(d14_all, "띄우기(is_rating_up, 5%)", d14_all["is_rating_up"])
+    ingroup_report(d14_all, "합집합(is_rating_deviation_v2, 5%)", d14_all["is_rating_deviation_v2"])
+
     print()
     print("=== 2차 피드백: 플랫폼 성장 편향 확인 (평생평균 버스트 vs 직전90일 실측) ===")
     life_burst = d14["pval_life"] < 0.01
