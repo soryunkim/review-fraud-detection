@@ -144,6 +144,26 @@ def temporal_split(dates: pd.Series) -> tuple[np.ndarray, np.ndarray, np.ndarray
             np.isin(m, TIME_SPLIT_MONTHS["test"]))
 
 
+ROLLING_FOLDS = [  # (train 월, val 월, test 월)
+    (range(1, 9), (9,), (10,)),
+    (range(1, 10), (10,), (11,)),
+    (range(1, 11), (11,), (12,)),
+]
+
+
+def rolling_splits(dates: pd.Series) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """한 달씩 밀어가며 평가(rolling origin) — 선택지 (c') (오동진, 2026-09-13).
+
+    회차 1: 1~8월 train / 9월 val / 10월 test, 회차 2: 1~9 / 10 / 11, 회차 3: 1~10 / 11 / 12.
+    회차마다 모델을 새로 학습하고, 세 회차의 test(10~12월)를 합쳐 채점한다.
+    12월만 쓰는 시간 단위 분할보다 test 가 약 3배라 작은 칸(평점 이탈형·버스트형)의
+    검정력을 보완하면서, 학습 기간은 8~10개월로 유지한다(단순 10~12월 test 는 7개월).
+    어느 회차든 test 는 train 보다 뒤라 미래 정보는 들어오지 않는다.
+    """
+    m = pd.to_datetime(dates).dt.month.to_numpy()
+    return [(np.isin(m, list(tr)), np.isin(m, va), np.isin(m, te)) for tr, va, te in ROLLING_FOLDS]
+
+
 def subsample_users(user_ids: np.ndarray, frac: float, seed: int) -> np.ndarray:
     """작성자 단위 표본(불리언 마스크). 다작 작성자의 리뷰가 반쪼가리로 잘려 R-U-R
     구조와 라벨이 왜곡되는 것을 막기 위해 항상 작성자 단위로 자른다."""
@@ -218,7 +238,7 @@ def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: 
                exclude_cols: list[str], seed: int) -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
-    sfx = {"user": "_usersplit", "time": "_timesplit"}.get(split, "")
+    sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
     sfx += "_notie" if drop_ties else ""
     if behavior_col:
         sfx += f"_{behavior_col}" + ("" if behavior == "yes" else "-not")
@@ -229,11 +249,14 @@ def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: 
     return sfx
 
 
-def save_scores(path: Path, review_ids: np.ndarray, split_names: np.ndarray, scores: np.ndarray) -> None:
+def save_scores(path: Path, review_ids: np.ndarray, split_names: np.ndarray, scores: np.ndarray,
+                fold: np.ndarray | None = None) -> None:
     """학습·평가 대상 리뷰별 점수 저장 — 짝지은 부트스트랩(10_paired_bootstrap.py)용."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"review_id": review_ids, "split": split_names,
-                  "score": scores.astype("float32")}).to_parquet(path, index=False)
+    df = pd.DataFrame({"review_id": review_ids, "split": split_names, "score": scores.astype("float32")})
+    if fold is not None:
+        df["fold"] = fold
+    df.to_parquet(path, index=False)
 
 
 def subset_adjacency(adj: sp.csr_matrix, mask: np.ndarray) -> sp.csr_matrix:
@@ -271,12 +294,13 @@ def main() -> int:
                     help="작성자 첫날 동률 리뷰(2014년 18,172건)를 학습·평가 대상에서 제외. "
                          "라벨이 review_id 순서로 갈리고 R-U-R 이웃이 전부 같은 날인 경계 리뷰들이라, "
                          "남은 신호가 여기서 오는지 확인하는 용도. 파일명에 _notie 가 붙는다.")
-    ap.add_argument("--split", default="review", choices=["review", "user", "time"],
+    ap.add_argument("--split", default="review", choices=["review", "user", "time", "rolling"],
                     help="review(기본, 기존 결과와 동일): 리뷰 단위 무작위 분할. "
                          "user: 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해 "
                          "\"작성자 암기\" 효과를 제거(검증용). 결과 파일명에 _usersplit 이 붙는다. "
                          "time: 시간 단위 분할 — 1~9월 train / 10~11월 val / 12월 test(주 결과용). "
-                         "결과 파일명에 _timesplit 이 붙는다.")
+                         "결과 파일명에 _timesplit 이 붙는다. "
+                         "rolling: 한 달씩 밀어가며 3회차(test 10·11·12월 합산, 선택지 (c')). 접미사 _rolling")
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: RD DEV EXT — 평점 이탈형 정의에 쓰인 피처). "
                          "파일명에 _excl-... 이 붙는다.")
@@ -356,94 +380,128 @@ def main() -> int:
 
     print("[2/4] train/val/test 분할 (target 노드에서만, 사기율 유지, seed 고정)")
     target_idx_in_universe = np.flatnonzero(target_local)
+    tdates = sub_nodes.loc[target_local, "date"]
     if args.split == "user":
-        train_rel, val_rel, test_rel = user_stratified_split(
-            sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)
+        folds = [user_stratified_split(sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)]
     elif args.split == "time":
-        train_rel, val_rel, test_rel = temporal_split(sub_nodes.loc[target_local, "date"])
+        folds = [temporal_split(tdates)]
+    elif args.split == "rolling":
+        folds = rolling_splits(tdates)
     else:
-        train_rel, val_rel, test_rel = stratified_split(fraud, seed=args.seed)
-    train_idx = target_idx_in_universe[train_rel]
-    val_idx = target_idx_in_universe[val_rel]
-    test_idx = target_idx_in_universe[test_rel]
-    print(f"      train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,} "
-          f"| 사기율 {fraud[train_rel].mean():.1%}/{fraud[val_rel].mean():.1%}/{fraud[test_rel].mean():.1%} "
-          f"(split={args.split})")
+        folds = [stratified_split(fraud, seed=args.seed)]
 
-    # float64 + 완화된 0-근사 판정(sigma < 1e-6): train 서브셋(예: 저활동형)에서는
-    # 상수인 피처(ISR, U_MNR 등)가 float32 계산에서 정확히 0이 아닌 극소값(~4e-5)으로
-    # 나올 수 있다. sigma == 0 만 걸러내면 이 극소값으로 나눠 scope=full처럼 표준화
-    # 대상 밖 이웃(값이 실제로 다양한 비저활동 리뷰)의 피처가 최대 수만 배로 폭주한다
-    # (오동진, 2026-09-11 — full scope epoch 1 loss 136 발견).
-    mu = X[train_idx].astype("float64").mean(axis=0, keepdims=True)
-    sigma = X[train_idx].astype("float64").std(axis=0, keepdims=True)
-    sigma[sigma < 1e-6] = 1.0
-    X = ((X - mu) / sigma).astype("float32")
-
-    x_t = torch.from_numpy(X)
+    X_raw = X
     y_t = torch.from_numpy(fraud_all)
-    train_idx_t = torch.from_numpy(train_idx)
+    n_t = len(target_idx_in_universe)
+    test_score_rel = np.full(n_t, np.nan)       # 대상 좌표계: 각 리뷰가 test 였던 회차의 점수
+    test_fold_rel = np.zeros(n_t, dtype=int)
+    val_score_rel = np.full(n_t, np.nan)
+    fold_results, train_rates = [], []
 
-    pos = fraud_all[train_idx].sum()
-    neg = len(train_idx) - pos
-    pos_weight = torch.tensor([neg / max(pos, 1.0)])
-    print(f"      pos_weight(train)={pos_weight.item():.2f}")
+    for k, (train_rel, val_rel, test_rel) in enumerate(folds, 1):
+        train_idx = target_idx_in_universe[train_rel]
+        val_idx = target_idx_in_universe[val_rel]
+        test_idx = target_idx_in_universe[test_rel]
+        tag = f"[회차 {k}/{len(folds)}] " if len(folds) > 1 else ""
+        print(f"      {tag}train {len(train_idx):,} / val {len(val_idx):,} / test {len(test_idx):,} "
+              f"| 사기율 {fraud[train_rel].mean():.1%}/{fraud[val_rel].mean():.1%}/{fraud[test_rel].mean():.1%} "
+              f"(split={args.split})")
 
-    print("[3/4] 학습")
-    model = VanillaGNN(in_dim=X.shape[1], hidden_dim=args.hidden,
-                       dropout=args.dropout, backbone=args.backbone)
-    optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        # float64 + 완화된 0-근사 판정(sigma < 1e-6): train 서브셋(예: 저활동형)에서는
+        # 상수인 피처(ISR, U_MNR 등)가 float32 계산에서 정확히 0이 아닌 극소값(~4e-5)으로
+        # 나올 수 있다. sigma == 0 만 걸러내면 이 극소값으로 나눠 scope=full처럼 표준화
+        # 대상 밖 이웃(값이 실제로 다양한 비저활동 리뷰)의 피처가 최대 수만 배로 폭주한다
+        # (오동진, 2026-09-11 — full scope epoch 1 loss 136 발견).
+        # 회차마다 그 회차의 train 으로 다시 표준화한다(rolling 에서 미래 통계가 섞이지 않게).
+        mu = X_raw[train_idx].astype("float64").mean(axis=0, keepdims=True)
+        sigma = X_raw[train_idx].astype("float64").std(axis=0, keepdims=True)
+        sigma[sigma < 1e-6] = 1.0
+        X = ((X_raw - mu) / sigma).astype("float32")
 
-    best_val_auroc = -1.0
-    best_state = None
-    bad_epochs = 0
-    for epoch in range(1, args.epochs + 1):
-        model.train()
-        optim.zero_grad()
-        logits = model(x_t, adj_norm)
-        loss = loss_fn(logits[train_idx_t], y_t[train_idx_t])
-        loss.backward()
-        optim.step()
+        x_t = torch.from_numpy(X)
+        train_idx_t = torch.from_numpy(train_idx)
 
+        pos = fraud_all[train_idx].sum()
+        neg = len(train_idx) - pos
+        pos_weight = torch.tensor([neg / max(pos, 1.0)])
+        print(f"      pos_weight(train)={pos_weight.item():.2f}")
+
+        print(f"[3/4] {tag}학습")
+        torch.manual_seed(args.seed)   # 회차마다 같은 초기화. 회차가 1개인 분할은 기존과 동일
+        model = VanillaGNN(in_dim=X.shape[1], hidden_dim=args.hidden,
+                           dropout=args.dropout, backbone=args.backbone)
+        optim = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        best_val_auroc = -1.0
+        best_state = None
+        bad_epochs = 0
+        for epoch in range(1, args.epochs + 1):
+            model.train()
+            optim.zero_grad()
+            logits = model(x_t, adj_norm)
+            loss = loss_fn(logits[train_idx_t], y_t[train_idx_t])
+            loss.backward()
+            optim.step()
+
+            model.eval()
+            with torch.no_grad():
+                logits = model(x_t, adj_norm)
+                val_scores = torch.sigmoid(logits[val_idx]).numpy()
+            val_metrics = evaluate(fraud_all[val_idx], val_scores)
+
+            if val_metrics["auroc"] > best_val_auroc:
+                best_val_auroc = val_metrics["auroc"]
+                best_state = {k_: v.clone() for k_, v in model.state_dict().items()}
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
+
+            if epoch % 10 == 0 or epoch == 1:
+                print(f"      epoch {epoch:3d} | loss {loss.item():.4f} | "
+                      f"val AUROC {val_metrics['auroc']:.4f} AUPRC {val_metrics['auprc']:.4f}")
+
+            if bad_epochs >= args.patience:
+                print(f"      epoch {epoch}: {args.patience}회 개선 없어 조기 종료")
+                break
+
+        print(f"[4/4] {tag}최종 평가 (best-val 체크포인트)")
+        model.load_state_dict(best_state)
         model.eval()
         with torch.no_grad():
             logits = model(x_t, adj_norm)
-            val_scores = torch.sigmoid(logits[val_idx]).numpy()
-        val_metrics = evaluate(fraud_all[val_idx], val_scores)
+            scores = torch.sigmoid(logits).numpy()
 
-        if val_metrics["auroc"] > best_val_auroc:
-            best_val_auroc = val_metrics["auroc"]
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-            bad_epochs = 0
-        else:
-            bad_epochs += 1
+        # 고정 임계값(Macro F1용): train 사기율 기준 상위 pos_rate 비율을 사기로 판정.
+        # val/test 라벨을 보고 사후에 고르는 게 아니라 train 시점에 정해지는 값이라
+        # best_f1(사후 최적 임계값)보다 실전에 가까운 평가다.
+        train_pos_rate = float(fraud_all[train_idx].mean())
+        val_final = evaluate(fraud_all[val_idx], scores[val_idx], pos_rate=train_pos_rate)
+        test_final = evaluate(fraud_all[test_idx], scores[test_idx], pos_rate=train_pos_rate)
+        print(f"      val  : AUROC {val_final['auroc']:.4f} | AUPRC {val_final['auprc']:.4f} "
+              f"| best-F1 {val_final['best_f1']:.4f} | Macro-F1(고정) {val_final['macro_f1']:.4f}")
+        print(f"      test : AUROC {test_final['auroc']:.4f} | AUPRC {test_final['auprc']:.4f} "
+              f"| best-F1 {test_final['best_f1']:.4f} | Macro-F1(고정) {test_final['macro_f1']:.4f}")
 
-        if epoch % 10 == 0 or epoch == 1:
-            print(f"      epoch {epoch:3d} | loss {loss.item():.4f} | "
-                  f"val AUROC {val_metrics['auroc']:.4f} AUPRC {val_metrics['auprc']:.4f}")
+        test_score_rel[test_rel] = scores[test_idx]
+        test_fold_rel[test_rel] = k
+        val_score_rel[val_rel] = scores[val_idx]
+        train_rates.append((train_pos_rate, int(train_rel.sum())))
+        fold_results.append({"fold": k, "n_train": int(train_rel.sum()), "n_val": int(val_rel.sum()),
+                             "n_test": int(test_rel.sum()), "epochs_run": epoch,
+                             "val": val_final, "test": test_final})
 
-        if bad_epochs >= args.patience:
-            print(f"      epoch {epoch}: {args.patience}회 개선 없어 조기 종료")
-            break
-
-    print("[4/4] 최종 평가 (best-val 체크포인트)")
-    model.load_state_dict(best_state)
-    model.eval()
-    with torch.no_grad():
-        logits = model(x_t, adj_norm)
-        scores = torch.sigmoid(logits).numpy()
-
-    # 고정 임계값(Macro F1용): train 사기율 기준 상위 pos_rate 비율을 사기로 판정.
-    # val/test 라벨을 보고 사후에 고르는 게 아니라 train 시점에 정해지는 값이라
-    # best_f1(사후 최적 임계값)보다 실전에 가까운 평가다.
-    train_pos_rate = float(fraud_all[train_idx].mean())
-    val_final = evaluate(fraud_all[val_idx], scores[val_idx], pos_rate=train_pos_rate)
-    test_final = evaluate(fraud_all[test_idx], scores[test_idx], pos_rate=train_pos_rate)
-    print(f"      val  : AUROC {val_final['auroc']:.4f} | AUPRC {val_final['auprc']:.4f} "
-          f"| best-F1 {val_final['best_f1']:.4f} | Macro-F1(고정) {val_final['macro_f1']:.4f}")
-    print(f"      test : AUROC {test_final['auroc']:.4f} | AUPRC {test_final['auprc']:.4f} "
-          f"| best-F1 {test_final['best_f1']:.4f} | Macro-F1(고정) {test_final['macro_f1']:.4f}")
+    if len(folds) > 1:
+        # 회차별 test(10·11·12월)를 합쳐 한 번에 채점한다. 고정 임계값은 회차 train 사기율의 가중 평균.
+        pooled_rate = float(sum(r * n for r, n in train_rates) / sum(n for _, n in train_rates))
+        test_rel = ~np.isnan(test_score_rel)
+        val_rel = ~np.isnan(val_score_rel)
+        train_rel = folds[-1][0]
+        test_final = evaluate(fraud[test_rel], test_score_rel[test_rel], pos_rate=pooled_rate)
+        val_final = evaluate(fraud[val_rel], val_score_rel[val_rel], pos_rate=pooled_rate)
+        epoch = [f["epochs_run"] for f in fold_results]
+        print(f"      [합산 test {int(test_rel.sum()):,}건] AUROC {test_final['auroc']:.4f} | "
+              f"AUPRC {test_final['auprc']:.4f} | Macro-F1(고정) {test_final['macro_f1']:.4f}")
 
     result = {
         "condition": "A",
@@ -478,13 +536,20 @@ def main() -> int:
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
+    if len(folds) > 1:
+        result["folds"] = fold_results
     if args.save_scores:
-        split_names = np.full(len(target_idx_in_universe), "train", dtype=object)
-        split_names[val_rel] = "val"
-        split_names[test_rel] = "test"
         score_path = SCORES_DIR / "gnn" / f"{stem}.parquet"
-        save_scores(score_path, sub_nodes["review_id"].to_numpy()[target_idx_in_universe],
-                    split_names, scores[target_idx_in_universe])
+        rids = sub_nodes["review_id"].to_numpy()[target_idx_in_universe]
+        if len(folds) > 1:
+            # rolling: 회차마다 모델이 달라 train/val 점수는 의미가 없으므로 합산 test 만 저장
+            save_scores(score_path, rids[test_rel], np.full(int(test_rel.sum()), "test", dtype=object),
+                        test_score_rel[test_rel], fold=test_fold_rel[test_rel])
+        else:
+            split_names = np.full(len(target_idx_in_universe), "train", dtype=object)
+            split_names[val_rel] = "val"
+            split_names[test_rel] = "test"
+            save_scores(score_path, rids, split_names, scores[target_idx_in_universe])
         result["scores_file"] = str(score_path.relative_to(ROOT)).replace("\\", "/")
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n저장: {out} | 총 {time.time()-t0:.0f}초")
