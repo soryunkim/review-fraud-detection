@@ -2,38 +2,38 @@
   "n_target": 78733,
   "fraud_rate_target": 0.20885778963565826,
   "fraud_rate_test": 0.21429596841335297,
-  "epochs_run": 83,
+  "epochs_run": 39,
   "val": {
-    "auroc": 0.6590072792258935,
-    "auprc": 0.36931551319268485,
-    "best_f1": 0.43362740010378825,
-    "best_threshold": 0.47567540407180786,
+    "auroc": 0.6861581678143053,
+    "auprc": 0.4097172868769279,
+    "best_f1": 0.4561018437225637,
+    "best_threshold": 0.494150847196579,
     "n": 13646,
     "n_fraud": 3207,
-    "fixed_threshold": 0.6000893712043762,
+    "fixed_threshold": 0.6064561009407043,
     "fixed_pos_rate_used": 0.20206469297409058,
-    "macro_f1": 0.6017185319829796,
-    "fraud_f1_fixed": 0.37753562447611066,
-    "normal_f1_fixed": 0.8259014394898485
+    "macro_f1": 0.6126597411770911,
+    "fraud_f1_fixed": 0.39463537300922047,
+    "normal_f1_fixed": 0.8306841093449618
   },
   "test": {
-    "auroc": 0.6699757191091003,
-    "auprc": 0.3627419805304779,
-    "best_f1": 0.41838801134062376,
-    "best_threshold": 0.4572834074497223,
+    "auroc": 0.6675612118518743,
+    "auprc": 0.3688366943773753,
+    "best_f1": 0.4224066390041494,
+    "best_threshold": 0.47277384996414185,
     "n": 6967,
     "n_fraud": 1493,
-    "fixed_threshold": 0.5935083031654358,
+    "fixed_threshold": 0.601284384727478,
     "fixed_pos_rate_used": 0.20206469297409058,
-    "macro_f1": 0.6084063624987905,
-    "fraud_f1_fixed": 0.37986901068597034,
-    "normal_f1_fixed": 0.8369437143116106
+    "macro_f1": 0.6053589411952791,
+    "fraud_f1_fixed": 0.37504308859014135,
+    "normal_f1_fixed": 0.835674793800417
   },
   "model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)",
   "group": "low",
-  "features": "all",
-  "n_features": 37,
-  "seed": 1,
+  "features": "all_text",
+  "n_features": 421,
+  "seed": 0,
   "split": "time",
   "excluded_cols": [],
   "behavior_col": null,
@@ -75,7 +75,8 @@
     "P_ETG",
     "P_RL",
     "P_ACS",
-    "P_MCS"
+    "P_MCS",
+    "emb_minilm_384 (384)"
   ],
   "hyperparams": {
     "hidden": 64,
@@ -85,5 +86,5 @@
     "epochs": 200,
     "patience": 20
   },
-  "scores_file": "data/processed/scores/mlp/low_all_seed1_timesplit.parquet"
+  "scores_file": "data/processed/scores/mlp/low_all_text_seed0_timesplit.parquet"
 }

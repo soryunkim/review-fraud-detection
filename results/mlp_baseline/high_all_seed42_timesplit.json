@@ -1,6 +1,7 @@
 {
   "n_target": 101926,
   "fraud_rate_target": 0.06298687309026718,
+  "fraud_rate_test": 0.07042723894119263,
   "epochs_run": 136,
   "val": {
     "auroc": 0.8376139975685686,
@@ -34,6 +35,9 @@
   "n_features": 37,
   "seed": 42,
   "split": "time",
+  "excluded_cols": [],
+  "behavior_col": null,
+  "behavior": null,
   "feature_columns": [
     "Rank",
     "RD",
@@ -80,5 +84,6 @@
     "weight_decay": 0.0005,
     "epochs": 200,
     "patience": 20
-  }
+  },
+  "scores_file": "data/processed/scores/mlp/high_all_seed42_timesplit.parquet"
 }
