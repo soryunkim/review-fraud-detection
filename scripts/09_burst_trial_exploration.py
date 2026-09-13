@@ -22,12 +22,22 @@ docs/버스트형_정의_검토_소륜.md §3의 근거 코드. Fei et al.(2013)
   90일간 조용했던 상점은 기준선이 0에 가까워 리뷰 1건도 다시 유의해진다(1건비율 23%).
   → **최종 정의: 두 기준선(평생평균, 직전 90일) 모두에서 p<0.01인 경우만 채택**
     (한쪽의 약점을 다른 쪽이 보완하는 구조).
+- [프로세스 제안, 오동진] 같은 정의를 각자 다시 계산하면 작은 불일치가 생긴다(예: 평점
+  이탈형 표본 9,813 vs 10,175 — as-of 상점평균 계산 차이로 추정). 이 스크립트를
+  **단일 라벨 소스**로 삼기 위해 `--write-labels`로 review_id별 최종 라벨 3컬럼
+  (`is_burst`, `is_rating_deviation`, `is_burst_and_rating`)을 저장하는 기능을 추가했다.
+- [기록, 민섭] "1건짜리"(90일간 조용하다 리뷰 1건, 평생평균 기준으로만 유의) 케이스는
+  버스트형에서 제외하지만, "휴면 상점이 리뷰를 사서 활동을 재개하는" 패턴일 수 있어
+  별도로 규모·사기율을 기록해둔다(향후 피처·유형 후보).
 
-실행: python scripts/09_burst_trial_exploration.py
+실행:
+  python scripts/09_burst_trial_exploration.py              # 탐색 리포트만 출력
+  python scripts/09_burst_trial_exploration.py --write-labels  # + 라벨 컬럼 저장
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +46,7 @@ from scipy.stats import poisson
 
 ROOT = Path(__file__).resolve().parents[1]
 REVIEWS = ROOT / "data" / "processed" / "reviews.parquet"
+LABELS_OUT = ROOT / "data" / "processed" / "burst_labels.parquet"
 
 WINDOW_DAYS = 7
 BASELINE_DAYS = 90  # 직전 90일 기준선(최근 7일 제외)
@@ -142,7 +153,59 @@ def ingroup_report(d14: pd.DataFrame, name: str, mask: pd.Series) -> None:
         )
 
 
+def build_labels(res: pd.DataFrame) -> pd.DataFrame:
+    """review_id별 최종 라벨 3컬럼. 전체 이력(연도 무관) 기준 — 라벨은 전체 데이터에서
+    계산한다는 프로젝트 원칙(experiment_matrix.md)을 따른다. elapsed==0(그 상점의
+    첫 리뷰)은 평생평균 기준선이 정의상 불안정해 버스트 판정 대상에서 제외한다.
+    """
+    valid90 = res["base90_days"] >= 30
+    evaluable = res["elapsed"] >= 1
+    is_burst = evaluable & valid90 & (res["pval_life"] < 0.01) & (res["pval_90"] < 0.01)
+    is_rating = res["is_rating_anom"]
+    return pd.DataFrame(
+        {
+            "review_id": res["review_id"],
+            "is_burst": is_burst.fillna(False).astype(bool),
+            "is_rating_deviation": is_rating.astype(bool),
+            "is_burst_and_rating": (is_burst.fillna(False) & is_rating).astype(bool),
+        }
+    )
+
+
+def report_dormant_case(res: pd.DataFrame) -> None:
+    """'1건짜리'(직전90일 기준으로만 유의 — 평생평균으로는 그 상점이 원래 활발해서
+    유의하지 않음) — "평소엔 정상 운영되던 상점이 최근 90일 조용하다가 리뷰 1건으로
+    재개"되는 휴면 상점 리뷰 재개 후보. 버스트형(교집합)에서는 제외하지만 규모·사기율을
+    별도로 기록한다(민섭 제안, §3.4).
+    """
+    d14 = res[(res["year"] == 2014) & (res["elapsed"] >= 1)]
+    ninety_only = ((d14["pval_90"] < 0.01) & (d14["base90_days"] >= 30)) & ~(
+        d14["pval_life"] < 0.01
+    )
+    dormant = ninety_only & (d14["local_count"] == 1)
+    n = int(dormant.sum())
+    if n == 0:
+        print("휴면 상점 재개 후보: n=0")
+        return
+    fr = d14.loc[dormant, "fraud"].mean()
+    print(f"휴면 상점 재개 후보(1건, 직전90일만 유의): n={n:,}  사기율={fr*100:.2f}%")
+    for grp_name, grp_mask in [("저활동", d14["is_new"]), ("비저활동", ~d14["is_new"])]:
+        sel = dormant & grp_mask
+        ns = int(sel.sum())
+        if ns == 0:
+            continue
+        print(f"  {grp_name}: n={ns:,}  사기율={d14.loc[sel, 'fraud'].mean()*100:.2f}%")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--write-labels",
+        action="store_true",
+        help=f"최종 라벨 3컬럼을 {LABELS_OUT} 에 저장(단일 소스, 오동진 제안)",
+    )
+    args = parser.parse_args()
+
     df = pd.read_parquet(
         REVIEWS,
         columns=["review_id", "prod_id", "user_id", "date", "rating", "fraud", "year"],
@@ -158,6 +221,17 @@ def main() -> None:
 
     is_new_map = pd.Series(is_new, index=df["review_id"].values)
     res["is_new"] = res["review_id"].map(is_new_map)
+
+    if args.write_labels:
+        labels = build_labels(res)
+        labels.to_parquet(LABELS_OUT, index=False)
+        print(f"라벨 저장 완료: {LABELS_OUT} ({len(labels):,}행)")
+        print(
+            f"  is_burst={labels['is_burst'].sum():,}  "
+            f"is_rating_deviation={labels['is_rating_deviation'].sum():,}  "
+            f"is_burst_and_rating={labels['is_burst_and_rating'].sum():,}"
+        )
+        print()
 
     d14 = res[(res["year"] == 2014) & (res["elapsed"] >= 1)].copy()
     valid90 = d14["base90_days"] >= 30
@@ -223,6 +297,10 @@ def main() -> None:
         f"비저활동 교집합 12월 test: n={(burst_nonnew & dec).sum():,} "
         f"사기={d14.loc[burst_nonnew & dec, 'fraud'].sum():.0f}"
     )
+
+    print()
+    print("=== 기록: 휴면 상점 재개 후보 (버스트형에서는 제외, 민섭 제안) ===")
+    report_dormant_case(res)
 
 
 if __name__ == "__main__":
