@@ -50,5 +50,6 @@
   "behavior": "no",
   "fraud_rate_train": 0.19819723069667816,
   "fraud_rate_test": 0.2073850780725479,
-  "elapsed_sec": 49.9
+  "elapsed_sec": 56.1,
+  "scores_file": "data/processed/scores/gnn/low_rur_sage_full_timesplit_is_burst-not.parquet"
 }

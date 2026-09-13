@@ -50,6 +50,6 @@
   "behavior": "yes",
   "fraud_rate_train": 0.10139503329992294,
   "fraud_rate_test": 0.10879284888505936,
-  "elapsed_sec": 16.2,
+  "elapsed_sec": 11.9,
   "scores_file": "data/processed/scores/gnn/high_rur_sage_full_timesplit_is_rating_deviation_v2_seed1.parquet"
 }

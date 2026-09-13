@@ -84,5 +84,6 @@
     "weight_decay": 0.0005,
     "epochs": 200,
     "patience": 20
-  }
+  },
+  "scores_file": "data/processed/scores/mlp/high_all_seed3_timesplit_is_rating_deviation_v2-not.parquet"
 }
