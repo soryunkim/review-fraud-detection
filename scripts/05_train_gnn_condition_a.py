@@ -193,6 +193,49 @@ def build_group_mask(nodes: pd.DataFrame, group: str, le2: bool) -> np.ndarray:
     return np.ones(len(nodes), dtype=bool)
 
 
+LABELS_PATH = ROOT / "data" / "processed" / "burst_labels.parquet"
+SCORES_DIR = ROOT / "data" / "processed" / "scores"   # 리뷰별 점수 — review_id 가 들어 있어 git 비대상(data/)
+
+
+def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
+    """행동 패턴 라벨(burst_labels.parquet 의 불리언 컬럼)로 2×2 칸을 고른다 (오동진, 2026-09-13).
+
+    --group(저활동/비저활동)과 겹쳐서 쓴다. 예) 평점 이탈형 칸 = --group high
+    --behavior-col is_rating_deviation_v2 --behavior yes, 혼합 칸 = --group low ... yes.
+    라벨은 `python scripts/09_burst_trial_exploration.py --write-labels` 로 만든 단일 소스만 쓴다.
+    """
+    if not LABELS_PATH.exists():
+        raise FileNotFoundError(f"{LABELS_PATH} 가 없습니다. 09 --write-labels 를 먼저 실행하세요.")
+    lab = pd.read_parquet(LABELS_PATH, columns=["review_id", col]).set_index("review_id")[col]
+    flag = nodes["review_id"].map(lab)
+    if flag.isna().any():
+        raise ValueError(f"라벨 파일에 없는 노드가 {int(flag.isna().sum())}개 있습니다. 09 --write-labels 를 다시 실행하세요.")
+    flag = flag.to_numpy().astype(bool)
+    return flag if value == "yes" else ~flag
+
+
+def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
+               exclude_cols: list[str], seed: int) -> str:
+    """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
+    기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
+    sfx = {"user": "_usersplit", "time": "_timesplit"}.get(split, "")
+    sfx += "_notie" if drop_ties else ""
+    if behavior_col:
+        sfx += f"_{behavior_col}" + ("" if behavior == "yes" else "-not")
+    if exclude_cols:
+        sfx += "_excl-" + "-".join(exclude_cols)
+    if seed != 42:
+        sfx += f"_seed{seed}"
+    return sfx
+
+
+def save_scores(path: Path, review_ids: np.ndarray, split_names: np.ndarray, scores: np.ndarray) -> None:
+    """학습·평가 대상 리뷰별 점수 저장 — 짝지은 부트스트랩(10_paired_bootstrap.py)용."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"review_id": review_ids, "split": split_names,
+                  "score": scores.astype("float32")}).to_parquet(path, index=False)
+
+
 def subset_adjacency(adj: sp.csr_matrix, mask: np.ndarray) -> sp.csr_matrix:
     """mask 로 선택된 노드끼리만 남긴 부분그래프. 로컬 인덱스가 0..n-1 로 재부여된다."""
     idx = np.flatnonzero(mask)
@@ -235,7 +278,15 @@ def main() -> int:
                          "time: 시간 단위 분할 — 1~9월 train / 10~11월 val / 12월 test(주 결과용). "
                          "결과 파일명에 _timesplit 이 붙는다.")
     ap.add_argument("--exclude-cols", nargs="*", default=[],
-                    help="피처에서 뺄 컬럼 (예: singleton — 라벨 정의에 쓰인 피처)")
+                    help="피처에서 뺄 컬럼 (예: RD DEV EXT — 평점 이탈형 정의에 쓰인 피처). "
+                         "파일명에 _excl-... 이 붙는다.")
+    ap.add_argument("--behavior-col", default=None,
+                    help="2×2 칸 선택용 행동 패턴 라벨 컬럼(burst_labels.parquet). 예: is_rating_deviation_v2, "
+                         "is_burst. --group 과 겹쳐서 적용된다. 파일명에 _<컬럼> 이 붙는다.")
+    ap.add_argument("--behavior", default="yes", choices=["yes", "no"],
+                    help="--behavior-col 이 True 인 리뷰(yes) / False 인 리뷰(no)만 대상")
+    ap.add_argument("--save-scores", action="store_true",
+                    help="대상 리뷰별 점수를 data/processed/scores/ 에 저장(짝지은 부트스트랩용, git 비대상)")
     ap.add_argument("--out", type=Path, default=None,
                     help="결과 JSON 저장 경로 (기본: results/condition_a/phase1b/<group>_<relations>_<backbone>.json)")
     args = ap.parse_args()
@@ -262,6 +313,9 @@ def main() -> int:
         n_drop = int((group_mask & ties).sum())
         group_mask = group_mask & ~ties
         print(f"      첫날 동률 리뷰 {n_drop:,}건을 대상에서 제외(그래프에는 유지)")
+    if args.behavior_col:
+        group_mask = group_mask & behavior_mask(nodes, args.behavior_col, args.behavior)
+        print(f"      행동 패턴 칸: {args.behavior_col}={args.behavior} → 대상 {int(group_mask.sum()):,}건")
     sample_mask = subsample_users(nodes["user_id"].to_numpy(), args.frac, args.seed)
     target = group_mask & sample_mask   # 학습/평가 대상(그룹) — 항상 이 노드들로만 지도학습·채점
     n_target = int(target.sum())
@@ -413,15 +467,25 @@ def main() -> int:
         "seed": args.seed,
         "split": args.split,
         "drop_sameday_ties": args.drop_sameday_ties,
+        "behavior_col": args.behavior_col,
+        "behavior": args.behavior if args.behavior_col else None,
         "fraud_rate_train": float(fraud[train_rel].mean()),
         "fraud_rate_test": float(fraud[test_rel].mean()),
         "elapsed_sec": round(time.time() - t0, 1),
     }
-    suffix = ({"user": "_usersplit", "time": "_timesplit"}.get(args.split, "")
-              + ("_notie" if args.drop_sameday_ties else ""))
-    out = args.out or (RESULTS_DIR /
-                       f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}.json")
+    suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
+                        args.exclude_cols, args.seed)
+    stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
+    out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
+    if args.save_scores:
+        split_names = np.full(len(target_idx_in_universe), "train", dtype=object)
+        split_names[val_rel] = "val"
+        split_names[test_rel] = "test"
+        score_path = SCORES_DIR / "gnn" / f"{stem}.parquet"
+        save_scores(score_path, sub_nodes["review_id"].to_numpy()[target_idx_in_universe],
+                    split_names, scores[target_idx_in_universe])
+        result["scores_file"] = str(score_path.relative_to(ROOT)).replace("\\", "/")
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n저장: {out} | 총 {time.time()-t0:.0f}초")
     return 0

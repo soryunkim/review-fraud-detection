@@ -70,6 +70,11 @@ def load_features(nodes: pd.DataFrame, features: str) -> tuple[np.ndarray, list[
     if features == "text":
         emb = load_embeddings()
         return np.asarray(emb[rid], dtype=np.float32), [f"emb_{i}" for i in range(emb.shape[1])]
+    if features == "all_text":
+        # 로드맵 ③: 수작업 37개 + 텍스트 384 — "텍스트를 더했을 때" 효과(조건 B 기준선)
+        Xa, ca = load_features(nodes, "all")
+        Xt, ct = load_features(nodes, "text")
+        return np.hstack([Xa, Xt]), ca + ct
     f = load_rayana_asof_features(level=None if features == "all" else features)
     assert (f["review_id"].to_numpy() == rid).all(), "피처 행 순서가 graph_2014 노드와 다릅니다"
     cols = [c for c in f.columns if c != "review_id"]
@@ -77,12 +82,15 @@ def load_features(nodes: pd.DataFrame, features: str) -> tuple[np.ndarray, list[
 
 
 def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
-        split: str = "review", drop_ties: bool = False) -> dict:
+        split: str = "review", drop_ties: bool = False,
+        behavior_col: str | None = None, behavior: str = "yes") -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     target = b05.build_group_mask(nodes, group, le2=False)
     if drop_ties:
         target = target & ~b05.sameday_tie_mask(nodes)
+    if behavior_col:
+        target = target & b05.behavior_mask(nodes, behavior_col, behavior)
     X = X_all[target]
     fraud = nodes.loc[target, "fraud"].to_numpy().astype("float32")
     n = len(X)
@@ -142,19 +150,34 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
     with torch.no_grad():
         scores = torch.sigmoid(model(x_t, eye)).numpy()
     rate = float(fraud[train_idx].mean())
+    split_names = np.full(n, "train", dtype=object)
+    split_names[val_idx] = "val"
+    split_names[test_idx] = "test"
     return {
         "n_target": n,
         "fraud_rate_target": float(fraud.mean()),
+        "fraud_rate_test": float(fraud[test_idx].mean()),
         "epochs_run": epoch,
         "val": evaluate(fraud[val_idx], scores[val_idx], pos_rate=rate),
         "test": evaluate(fraud[test_idx], scores[test_idx], pos_rate=rate),
+        # 점수 저장용(결과 JSON 에는 넣지 않음)
+        "_scores": (nodes.loc[target, "review_id"].to_numpy(), split_names, scores),
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--groups", nargs="*", default=GROUPS, choices=GROUPS)
-    ap.add_argument("--features", nargs="*", default=FEATURE_SETS, choices=FEATURE_SETS)
+    ap.add_argument("--features", nargs="*", default=FEATURE_SETS, choices=FEATURE_SETS + ["all_text"],
+                    help="기본은 5구성. all_text(수작업 37 + 텍스트 384, 로드맵 ③)는 따로 지정해야 돈다")
+    ap.add_argument("--exclude-cols", nargs="*", default=[],
+                    help="피처에서 뺄 컬럼 (예: RD DEV EXT — 평점 이탈형 정의에 쓰인 피처, 05 와 동일). "
+                         "파일명에 _excl-... 이 붙는다")
+    ap.add_argument("--behavior-col", default=None,
+                    help="2×2 칸 선택용 행동 패턴 라벨 컬럼(burst_labels.parquet, 05 와 동일)")
+    ap.add_argument("--behavior", default="yes", choices=["yes", "no"])
+    ap.add_argument("--save-scores", action="store_true",
+                    help="대상 리뷰별 점수를 data/processed/scores/mlp/ 에 저장(짝지은 부트스트랩용, git 비대상)")
     ap.add_argument("--seeds", nargs="*", type=int, default=SEEDS)
     ap.add_argument("--drop-sameday-ties", action="store_true",
                     help="작성자 첫날 동률 리뷰를 대상에서 제외(05 와 동일). 파일명에 _notie")
@@ -168,21 +191,36 @@ def main() -> int:
     nodes = pd.read_parquet(b05.GRAPH_DIR / "nodes.parquet")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     rows = []
+    # seed 는 08 파일명에 원래 들어가므로 접미사에서는 뺀다(seed=42 로 넘김)
+    sfx = b05.run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
+                         args.exclude_cols, seed=42)
     for features in args.features:
         X_all, cols = load_features(nodes, features)
+        if args.exclude_cols:
+            keep = [i for i, c in enumerate(cols) if c not in args.exclude_cols]
+            X_all, cols = X_all[:, keep], [cols[i] for i in keep]
         for group in args.groups:
             for seed in args.seeds:
                 r = run(nodes, X_all, group, seed, split=args.split,
-                        drop_ties=args.drop_sameday_ties)
+                        drop_ties=args.drop_sameday_ties,
+                        behavior_col=args.behavior_col, behavior=args.behavior)
+                rid, split_names, scores = r.pop("_scores")
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,
-                          "split": args.split,
-                          "feature_columns": cols if features != "text" else "emb_minilm_384 (384)",
+                          "split": args.split, "excluded_cols": args.exclude_cols,
+                          "behavior_col": args.behavior_col,
+                          "behavior": args.behavior if args.behavior_col else None,
+                          "feature_columns": (cols if "text" not in features else
+                                              "emb_minilm_384 (384)" if features == "text" else
+                                              cols[:len(cols) - 384] + ["emb_minilm_384 (384)"]),
                           "hyperparams": {"hidden": HIDDEN, "dropout": DROPOUT, "lr": LR,
                                           "weight_decay": WD, "epochs": EPOCHS, "patience": PATIENCE}})
-                sfx = ({"user": "_usersplit", "time": "_timesplit"}.get(args.split, "")
-                       + ("_notie" if args.drop_sameday_ties else ""))
-                out = OUT_DIR / f"{group}_{features}_seed{seed}{sfx}.json"
+                stem = f"{group}_{features}_seed{seed}{sfx}"
+                if args.save_scores:
+                    score_path = b05.SCORES_DIR / "mlp" / f"{stem}.parquet"
+                    b05.save_scores(score_path, rid, split_names, scores)
+                    r["scores_file"] = str(score_path.relative_to(ROOT)).replace("\\", "/")
+                out = OUT_DIR / f"{stem}.json"
                 out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
                 t = r["test"]
                 print(f"{group:<5} {features:<8} seed {seed:<3} | AUROC {t['auroc']:.4f} "
@@ -209,7 +247,7 @@ def main() -> int:
             row["seed42"] = s42.loc[(a.group, a.features), ["auroc", "auprc", "macro_f1", "fraud_f1_fixed"]].to_dict()
         summary["rows"].append(row)
     if set(args.groups) == set(GROUPS) and set(args.features) == set(FEATURE_SETS):
-        name = {"user": "summary_usersplit.json", "time": "summary_timesplit.json"}.get(args.split, "summary.json")
+        name = f"summary{sfx}.json"   # review 분할·옵션 없음이면 summary.json (기존과 동일)
         (OUT_DIR / name).write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print("\n요약 (test, seed 평균 ± 표준편차)")
     for _, a in agg.iterrows():
