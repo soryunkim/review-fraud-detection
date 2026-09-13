@@ -63,6 +63,22 @@ def compute_time_signal(df: pd.DataFrame) -> pd.DataFrame:
         dates = sub["date"].values.astype("datetime64[D]")
         n = len(dates)
         if n < 2:
+            # 그 상점 리뷰가 1건뿐 — 평생평균/직전90일 모두 정의 불가.
+            # 행 자체를 빠뜨리면(구 동작) burst_labels.parquet에서 조인 시
+            # 결측이 되는 문제가 있었다(오동진 지적) — is_burst=False로
+            # 명시적으로 평가 가능하도록 자리표시 행을 남긴다.
+            out.append(
+                pd.DataFrame(
+                    {
+                        "review_id": sub["review_id"].values,
+                        "local_count": np.ones(n),
+                        "expected_life": np.full(n, np.nan),
+                        "expected_90": np.full(n, np.nan),
+                        "base90_days": np.zeros(n),
+                        "elapsed": np.zeros(n, dtype=int),
+                    }
+                )
+            )
             continue
         first = dates[0]
         idx = np.arange(1, n + 1)
