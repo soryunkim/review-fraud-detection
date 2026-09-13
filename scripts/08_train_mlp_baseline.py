@@ -98,70 +98,101 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
     if split == "user":
         # 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해
         # "작성자 암기" 효과를 제거한다(README 주의사항 3번 검증용).
-        masks = b05.user_stratified_split(nodes.loc[target, "user_id"].to_numpy(), fraud, seed=seed)
+        folds = [b05.user_stratified_split(nodes.loc[target, "user_id"].to_numpy(), fraud, seed=seed)]
     elif split == "time":
         # 시간 단위 분할 — 1~9월 train / 10~11월 val / 12월 test (주 결과용, 05 와 동일 함수)
-        masks = b05.temporal_split(nodes.loc[target, "date"])
+        folds = [b05.temporal_split(nodes.loc[target, "date"])]
+    elif split == "rolling":
+        # 한 달씩 밀어가며 3회차 — test 10·11·12월 합산 (선택지 (c'), 05 와 동일 함수)
+        folds = b05.rolling_splits(nodes.loc[target, "date"])
     else:
-        masks = b05.stratified_split(fraud, seed=seed)
-    train_idx, val_idx, test_idx = (np.flatnonzero(m) for m in masks)
+        folds = [b05.stratified_split(fraud, seed=seed)]
 
-    mu = X[train_idx].astype("float64").mean(axis=0, keepdims=True)
-    sigma = X[train_idx].astype("float64").std(axis=0, keepdims=True)
-    sigma[sigma < 1e-6] = 1.0
-    X = ((X - mu) / sigma).astype("float32")
-
-    x_t = torch.from_numpy(X)
     y_t = torch.from_numpy(fraud)
-    train_idx_t = torch.from_numpy(train_idx)
     eye = scipy_to_torch_sparse(sp.eye(n, format="csr", dtype=np.float32))   # 이웃 없음
+    test_score = np.full(n, np.nan)
+    test_fold = np.zeros(n, dtype=int)
+    val_score = np.full(n, np.nan)
+    rates, fold_results = [], []
 
-    pos = fraud[train_idx].sum()
-    pos_weight = torch.tensor([(len(train_idx) - pos) / max(pos, 1.0)])
+    for k, masks in enumerate(folds, 1):
+        train_idx, val_idx, test_idx = (np.flatnonzero(m) for m in masks)
 
-    model = VanillaGNN(in_dim=X.shape[1], hidden_dim=HIDDEN, dropout=DROPOUT, backbone="gcn")
-    optim = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        mu = X[train_idx].astype("float64").mean(axis=0, keepdims=True)
+        sigma = X[train_idx].astype("float64").std(axis=0, keepdims=True)
+        sigma[sigma < 1e-6] = 1.0
+        x_t = torch.from_numpy(((X - mu) / sigma).astype("float32"))
+        train_idx_t = torch.from_numpy(train_idx)
 
-    best_val_auroc, best_state, bad_epochs = -1.0, None, 0
-    for epoch in range(1, EPOCHS + 1):
-        model.train()
-        optim.zero_grad()
-        logits = model(x_t, eye)
-        loss = loss_fn(logits[train_idx_t], y_t[train_idx_t])
-        loss.backward()
-        optim.step()
+        pos = fraud[train_idx].sum()
+        pos_weight = torch.tensor([(len(train_idx) - pos) / max(pos, 1.0)])
 
+        torch.manual_seed(seed)   # 회차마다 같은 초기화. 회차가 1개인 분할은 기존과 동일
+        model = VanillaGNN(in_dim=X.shape[1], hidden_dim=HIDDEN, dropout=DROPOUT, backbone="gcn")
+        optim = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        best_val_auroc, best_state, bad_epochs = -1.0, None, 0
+        for epoch in range(1, EPOCHS + 1):
+            model.train()
+            optim.zero_grad()
+            logits = model(x_t, eye)
+            loss = loss_fn(logits[train_idx_t], y_t[train_idx_t])
+            loss.backward()
+            optim.step()
+
+            model.eval()
+            with torch.no_grad():
+                val_scores = torch.sigmoid(model(x_t, eye)[val_idx]).numpy()
+            val_auroc = evaluate(fraud[val_idx], val_scores)["auroc"]
+            if val_auroc > best_val_auroc:
+                best_val_auroc = val_auroc
+                best_state = {k_: v.clone() for k_, v in model.state_dict().items()}
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
+            if bad_epochs >= PATIENCE:
+                break
+
+        model.load_state_dict(best_state)
         model.eval()
         with torch.no_grad():
-            val_scores = torch.sigmoid(model(x_t, eye)[val_idx]).numpy()
-        val_auroc = evaluate(fraud[val_idx], val_scores)["auroc"]
-        if val_auroc > best_val_auroc:
-            best_val_auroc = val_auroc
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-            bad_epochs = 0
-        else:
-            bad_epochs += 1
-        if bad_epochs >= PATIENCE:
-            break
+            scores = torch.sigmoid(model(x_t, eye)).numpy()
+        rate = float(fraud[train_idx].mean())
+        test_score[test_idx] = scores[test_idx]
+        test_fold[test_idx] = k
+        val_score[val_idx] = scores[val_idx]
+        rates.append((rate, len(train_idx)))
+        fold_results.append({"fold": k, "n_train": len(train_idx), "n_test": len(test_idx), "epochs_run": epoch,
+                             "test": evaluate(fraud[test_idx], scores[test_idx], pos_rate=rate)})
 
-    model.load_state_dict(best_state)
-    model.eval()
-    with torch.no_grad():
-        scores = torch.sigmoid(model(x_t, eye)).numpy()
-    rate = float(fraud[train_idx].mean())
-    split_names = np.full(n, "train", dtype=object)
-    split_names[val_idx] = "val"
-    split_names[test_idx] = "test"
+    rid = nodes.loc[target, "review_id"].to_numpy()
+    if len(folds) == 1:
+        split_names = np.full(n, "train", dtype=object)
+        split_names[val_idx] = "val"
+        split_names[test_idx] = "test"
+        return {
+            "n_target": n,
+            "fraud_rate_target": float(fraud.mean()),
+            "fraud_rate_test": float(fraud[test_idx].mean()),
+            "epochs_run": epoch,
+            "val": evaluate(fraud[val_idx], scores[val_idx], pos_rate=rate),
+            "test": evaluate(fraud[test_idx], scores[test_idx], pos_rate=rate),
+            # 점수 저장용(결과 JSON 에는 넣지 않음)
+            "_scores": (rid, split_names, scores),
+        }
+    # rolling: 세 회차 test 를 합쳐 채점, 고정 임계값은 회차 train 사기율의 가중 평균
+    pooled = float(sum(r * m for r, m in rates) / sum(m for _, m in rates))
+    te, va = ~np.isnan(test_score), ~np.isnan(val_score)
     return {
         "n_target": n,
         "fraud_rate_target": float(fraud.mean()),
-        "fraud_rate_test": float(fraud[test_idx].mean()),
-        "epochs_run": epoch,
-        "val": evaluate(fraud[val_idx], scores[val_idx], pos_rate=rate),
-        "test": evaluate(fraud[test_idx], scores[test_idx], pos_rate=rate),
-        # 점수 저장용(결과 JSON 에는 넣지 않음)
-        "_scores": (nodes.loc[target, "review_id"].to_numpy(), split_names, scores),
+        "fraud_rate_test": float(fraud[te].mean()),
+        "epochs_run": [f["epochs_run"] for f in fold_results],
+        "val": evaluate(fraud[va], val_score[va], pos_rate=pooled),
+        "test": evaluate(fraud[te], test_score[te], pos_rate=pooled),
+        "folds": fold_results,
+        "_scores": (rid[te], np.full(int(te.sum()), "test", dtype=object), test_score[te], test_fold[te]),
     }
 
 
@@ -181,10 +212,11 @@ def main() -> int:
     ap.add_argument("--seeds", nargs="*", type=int, default=SEEDS)
     ap.add_argument("--drop-sameday-ties", action="store_true",
                     help="작성자 첫날 동률 리뷰를 대상에서 제외(05 와 동일). 파일명에 _notie")
-    ap.add_argument("--split", default="review", choices=["review", "user", "time"],
+    ap.add_argument("--split", default="review", choices=["review", "user", "time", "rolling"],
                     help="review(기본, 기존 결과와 동일) / user(작성자 단위 분할 — "
                          "결과 파일명에 _usersplit 접미사가 붙는다) / time(1~9월 train, "
-                         "10~11월 val, 12월 test — 접미사 _timesplit)")
+                         "10~11월 val, 12월 test — 접미사 _timesplit) / rolling(한 달씩 밀어가며 3회차, "
+                         "test 10~12월 합산 — 접미사 _rolling)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -204,7 +236,7 @@ def main() -> int:
                 r = run(nodes, X_all, group, seed, split=args.split,
                         drop_ties=args.drop_sameday_ties,
                         behavior_col=args.behavior_col, behavior=args.behavior)
-                rid, split_names, scores = r.pop("_scores")
+                sc = r.pop("_scores")   # (review_id, split, score[, fold])
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,
                           "split": args.split, "excluded_cols": args.exclude_cols,
@@ -218,7 +250,7 @@ def main() -> int:
                 stem = f"{group}_{features}_seed{seed}{sfx}"
                 if args.save_scores:
                     score_path = b05.SCORES_DIR / "mlp" / f"{stem}.parquet"
-                    b05.save_scores(score_path, rid, split_names, scores)
+                    b05.save_scores(score_path, sc[0], sc[1], sc[2], fold=sc[3] if len(sc) == 4 else None)
                     r["scores_file"] = str(score_path.relative_to(ROOT)).replace("\\", "/")
                 out = OUT_DIR / f"{stem}.json"
                 out.write_text(json.dumps(r, indent=2, ensure_ascii=False), encoding="utf-8")
