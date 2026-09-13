@@ -1,0 +1,160 @@
+{
+  "condition": "A",
+  "group": "low",
+  "le2": false,
+  "scope": "full",
+  "relations": [
+    "rsr"
+  ],
+  "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
+  "backbone": "sage",
+  "frac": 1.0,
+  "n_target": 11724,
+  "n_universe": 180659,
+  "n_edges": 5939276,
+  "isolated_nodes_in_target": 1962,
+  "fraud_rate_target": 0.3032241463661194,
+  "n_features": 37,
+  "excluded_cols": [],
+  "epochs_run": [
+    51,
+    73,
+    24
+  ],
+  "val": {
+    "auroc": 0.6097114707952146,
+    "auprc": 0.43490776963051553,
+    "best_f1": 0.5124223602484472,
+    "best_threshold": 0.43137216567993164,
+    "n": 3080,
+    "n_fraud": 1015,
+    "fixed_threshold": 0.5608811004600177,
+    "fixed_pos_rate_used": 0.2934795237195467,
+    "macro_f1": 0.5734878716281016,
+    "fraud_f1_fixed": 0.41271495570609695,
+    "normal_f1_fixed": 0.7342607875501062
+  },
+  "test": {
+    "auroc": 0.5861882151227634,
+    "auprc": 0.42916122945628155,
+    "best_f1": 0.5018164204407847,
+    "best_threshold": 0.13571235537528992,
+    "n": 3099,
+    "n_fraud": 1038,
+    "fixed_threshold": 0.5639360560590815,
+    "fixed_pos_rate_used": 0.2934795237195467,
+    "macro_f1": 0.5747718323469018,
+    "fraud_f1_fixed": 0.41683778234086244,
+    "normal_f1_fixed": 0.7327058823529412
+  },
+  "seed": 42,
+  "split": "rolling",
+  "drop_sameday_ties": false,
+  "behavior_col": "is_rating_deviation_v2",
+  "behavior": "yes",
+  "fraud_rate_train": 0.297054260969162,
+  "fraud_rate_test": 0.33494675159454346,
+  "elapsed_sec": 318.3,
+  "folds": [
+    {
+      "fold": 1,
+      "n_train": 7603,
+      "n_val": 1022,
+      "n_test": 1050,
+      "epochs_run": 51,
+      "val": {
+        "auroc": 0.6544254573337714,
+        "auprc": 0.44904038774557953,
+        "best_f1": 0.5190311418685121,
+        "best_threshold": 0.46564745903015137,
+        "n": 1022,
+        "n_fraud": 306,
+        "fixed_threshold": 0.5461105704307556,
+        "fixed_pos_rate_used": 0.29080626368522644,
+        "macro_f1": 0.5848124632447294,
+        "fraud_f1_fixed": 0.41459369817578773,
+        "normal_f1_fixed": 0.7550312283136711
+      },
+      "test": {
+        "auroc": 0.5941245184942665,
+        "auprc": 0.44318670687375405,
+        "best_f1": 0.5136702568351283,
+        "best_threshold": 0.3608803153038025,
+        "n": 1050,
+        "n_fraud": 357,
+        "fixed_threshold": 0.549319863319397,
+        "fixed_pos_rate_used": 0.29080626368522644,
+        "macro_f1": 0.562468314770906,
+        "fraud_f1_fixed": 0.40120663650075417,
+        "normal_f1_fixed": 0.7237299930410578
+      }
+    },
+    {
+      "fold": 2,
+      "n_train": 8625,
+      "n_val": 1050,
+      "n_test": 1008,
+      "epochs_run": 73,
+      "val": {
+        "auroc": 0.6104461986814929,
+        "auprc": 0.452611823401399,
+        "best_f1": 0.517998244073749,
+        "best_threshold": 0.32794004678726196,
+        "n": 1050,
+        "n_fraud": 357,
+        "fixed_threshold": 0.5333229899406433,
+        "fixed_pos_rate_used": 0.2918260991573334,
+        "macro_f1": 0.5683290264120548,
+        "fraud_f1_fixed": 0.40963855421686746,
+        "normal_f1_fixed": 0.7270194986072424
+      },
+      "test": {
+        "auroc": 0.5624307095343681,
+        "auprc": 0.4266847922656389,
+        "best_f1": 0.5177514792899408,
+        "best_threshold": 0.13571235537528992,
+        "n": 1008,
+        "n_fraud": 352,
+        "fixed_threshold": 0.5329412817955017,
+        "fixed_pos_rate_used": 0.2918260991573334,
+        "macro_f1": 0.539861246073535,
+        "fraud_f1_fixed": 0.3746130030959752,
+        "normal_f1_fixed": 0.7051094890510949
+      }
+    },
+    {
+      "fold": 3,
+      "n_train": 9675,
+      "n_val": 1008,
+      "n_test": 1041,
+      "epochs_run": 24,
+      "val": {
+        "auroc": 0.5638381721175165,
+        "auprc": 0.4102123209839607,
+        "best_f1": 0.518463810930576,
+        "best_threshold": 0.4381764531135559,
+        "n": 1008,
+        "n_fraud": 352,
+        "fixed_threshold": 0.5818037390708923,
+        "fixed_pos_rate_used": 0.297054260969162,
+        "macro_f1": 0.5534246082435277,
+        "fraud_f1_fixed": 0.39570552147239263,
+        "normal_f1_fixed": 0.7111436950146628
+      },
+      "test": {
+        "auroc": 0.6673995082135173,
+        "auprc": 0.4452085842893198,
+        "best_f1": 0.5310734463276836,
+        "best_threshold": 0.5042628645896912,
+        "n": 1041,
+        "n_fraud": 329,
+        "fixed_threshold": 0.5860125422477722,
+        "fixed_pos_rate_used": 0.297054260969162,
+        "macro_f1": 0.6022542745247874,
+        "fraud_f1_fixed": 0.4482758620689655,
+        "normal_f1_fixed": 0.7562326869806094
+      }
+    }
+  ],
+  "scores_file": "data/processed/scores/gnn/low_rsr_sage_full_rolling_is_rating_deviation_v2.parquet"
+}

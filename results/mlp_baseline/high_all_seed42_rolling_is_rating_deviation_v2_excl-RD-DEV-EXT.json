@@ -1,0 +1,153 @@
+{
+  "n_target": 7908,
+  "fraud_rate_target": 0.10381891578435898,
+  "fraud_rate_test": 0.1108374372124672,
+  "epochs_run": [
+    56,
+    33,
+    31
+  ],
+  "val": {
+    "auroc": 0.7799966958090356,
+    "auprc": 0.3281480975941567,
+    "best_f1": 0.41312741312741313,
+    "best_threshold": 0.7196395397186279,
+    "n": 2120,
+    "n_fraud": 238,
+    "fixed_threshold": 0.7521617773731626,
+    "fixed_pos_rate_used": 0.10141213961321487,
+    "macro_f1": 0.6502733004918068,
+    "fraud_f1_fixed": 0.37527593818984545,
+    "normal_f1_fixed": 0.9252706627937681
+  },
+  "test": {
+    "auroc": 0.7981360418590335,
+    "auprc": 0.3557692619987951,
+    "best_f1": 0.412573673870334,
+    "best_threshold": 0.6841936111450195,
+    "n": 2030,
+    "n_fraud": 225,
+    "fixed_threshold": 0.7413901115902379,
+    "fixed_pos_rate_used": 0.10141213961321487,
+    "macro_f1": 0.6560639703752768,
+    "fraud_f1_fixed": 0.3851508120649652,
+    "normal_f1_fixed": 0.9269771286855883
+  },
+  "folds": [
+    {
+      "fold": 1,
+      "n_train": 5117,
+      "n_test": 689,
+      "epochs_run": 56,
+      "test": {
+        "auroc": 0.8020958705125545,
+        "auprc": 0.36887712263336514,
+        "best_f1": 0.4305555555555556,
+        "best_threshold": 0.7792928218841553,
+        "n": 689,
+        "n_fraud": 79,
+        "fixed_threshold": 0.7653422355651855,
+        "fixed_pos_rate_used": 0.09966777265071869,
+        "macro_f1": 0.6745001098659635,
+        "fraud_f1_fixed": 0.4189189189189189,
+        "normal_f1_fixed": 0.9300813008130081
+      }
+    },
+    {
+      "fold": 2,
+      "n_train": 5878,
+      "n_test": 670,
+      "epochs_run": 33,
+      "test": {
+        "auroc": 0.8085633647690507,
+        "auprc": 0.4146592448308297,
+        "best_f1": 0.46060606060606063,
+        "best_threshold": 0.6881743669509888,
+        "n": 670,
+        "n_fraud": 73,
+        "fixed_threshold": 0.7391104698181152,
+        "fixed_pos_rate_used": 0.10139503329992294,
+        "macro_f1": 0.6710615820512366,
+        "fraud_f1_fixed": 0.41134751773049644,
+        "normal_f1_fixed": 0.9307756463719766
+      }
+    },
+    {
+      "fold": 3,
+      "n_train": 6567,
+      "n_test": 671,
+      "epochs_run": 31,
+      "test": {
+        "auroc": 0.7990791221881156,
+        "auprc": 0.33845637941680556,
+        "best_f1": 0.38926174496644295,
+        "best_threshold": 0.6570153832435608,
+        "n": 671,
+        "n_fraud": 73,
+        "fixed_threshold": 0.6739747524261475,
+        "fixed_pos_rate_used": 0.10278666019439697,
+        "macro_f1": 0.6455985915492958,
+        "fraud_f1_fixed": 0.36619718309859156,
+        "normal_f1_fixed": 0.925
+      }
+    }
+  ],
+  "model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)",
+  "group": "high",
+  "features": "all",
+  "n_features": 34,
+  "seed": 42,
+  "split": "rolling",
+  "excluded_cols": [
+    "RD",
+    "DEV",
+    "EXT"
+  ],
+  "behavior_col": "is_rating_deviation_v2",
+  "behavior": "yes",
+  "feature_columns": [
+    "Rank",
+    "ETF",
+    "ISR",
+    "PCW",
+    "PC",
+    "L",
+    "PP1",
+    "RES",
+    "SW",
+    "OW",
+    "DLu",
+    "DLb",
+    "F",
+    "U_MNR",
+    "U_PR",
+    "U_NR",
+    "U_avgRD",
+    "U_WRD",
+    "U_BST",
+    "U_ERD",
+    "U_ETG",
+    "U_RL",
+    "U_ACS",
+    "U_MCS",
+    "P_MNR",
+    "P_PR",
+    "P_NR",
+    "P_avgRD",
+    "P_WRD",
+    "P_ERD",
+    "P_ETG",
+    "P_RL",
+    "P_ACS",
+    "P_MCS"
+  ],
+  "hyperparams": {
+    "hidden": 64,
+    "dropout": 0.3,
+    "lr": 0.01,
+    "weight_decay": 0.0005,
+    "epochs": 200,
+    "patience": 20
+  },
+  "scores_file": "data/processed/scores/mlp/high_all_seed42_rolling_is_rating_deviation_v2_excl-RD-DEV-EXT.parquet"
+}
