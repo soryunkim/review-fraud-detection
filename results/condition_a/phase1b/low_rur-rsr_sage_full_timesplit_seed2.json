@@ -4,6 +4,7 @@
   "le2": false,
   "scope": "full",
   "relations": [
+    "rur",
     "rsr"
   ],
   "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
@@ -11,37 +12,37 @@
   "frac": 1.0,
   "n_target": 78733,
   "n_universe": 180659,
-  "n_edges": 5939276,
+  "n_edges": 6288508,
   "isolated_nodes_in_target": 7521,
   "fraud_rate_target": 0.20885778963565826,
   "n_features": 37,
   "excluded_cols": [],
-  "epochs_run": 81,
+  "epochs_run": 72,
   "val": {
-    "auroc": 0.6622449550483689,
-    "auprc": 0.3749020419086346,
-    "best_f1": 0.43687374749499,
-    "best_threshold": 0.4711996912956238,
+    "auroc": 0.6633884416731015,
+    "auprc": 0.37597696233799405,
+    "best_f1": 0.43804479752841224,
+    "best_threshold": 0.4682396948337555,
     "n": 13646,
     "n_fraud": 3207,
-    "fixed_threshold": 0.5975162386894226,
+    "fixed_threshold": 0.5805696249008179,
     "fixed_pos_rate_used": 0.20206469297409058,
-    "macro_f1": 0.6030057330646398,
-    "fraud_f1_fixed": 0.37954735959765296,
-    "normal_f1_fixed": 0.8264641065316266
+    "macro_f1": 0.6021475990101997,
+    "fraud_f1_fixed": 0.3782062028499581,
+    "normal_f1_fixed": 0.8260889951704412
   },
   "test": {
-    "auroc": 0.6815041255734653,
-    "auprc": 0.3900850128935721,
-    "best_f1": 0.42157751586582043,
-    "best_threshold": 0.4812641739845276,
+    "auroc": 0.6762380452341105,
+    "auprc": 0.3820050726956182,
+    "best_f1": 0.4211229946524064,
+    "best_threshold": 0.4628516137599945,
     "n": 6967,
     "n_fraud": 1493,
-    "fixed_threshold": 0.5925350785255432,
+    "fixed_threshold": 0.5779138803482056,
     "fixed_pos_rate_used": 0.20206469297409058,
-    "macro_f1": 0.612324475603305,
-    "fraud_f1_fixed": 0.38607376766632195,
-    "normal_f1_fixed": 0.8385751835402883
+    "macro_f1": 0.6127598215038067,
+    "fraud_f1_fixed": 0.38676318510858326,
+    "normal_f1_fixed": 0.8387564578990302
   },
   "seed": 2,
   "split": "time",
@@ -50,6 +51,6 @@
   "behavior": null,
   "fraud_rate_train": 0.20206469297409058,
   "fraud_rate_test": 0.21429596841335297,
-  "elapsed_sec": 263.4,
-  "scores_file": "data/processed/scores/gnn/low_rsr_sage_full_timesplit_seed2.parquet"
+  "elapsed_sec": 270.4,
+  "scores_file": "data/processed/scores/gnn/low_rur-rsr_sage_full_timesplit_seed2.parquet"
 }
