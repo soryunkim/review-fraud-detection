@@ -126,6 +126,38 @@ def user_stratified_split(user_ids: np.ndarray, fraud: np.ndarray, seed: int,
     return a == 0, a == 1, a == 2
 
 
+def ablation_train_mask(dates: pd.Series, user_ids: np.ndarray, train_rel: np.ndarray,
+                        test_rel: np.ndarray, mode: str) -> np.ndarray:
+    """누수분해 test-fixed ablation (9/12 보고서 §10.1, 오동진·팀 설계).
+
+    test·val 을 고정한 채(호출부에서 이미 고정된 분할을 넘긴다) train 에서만 정보를
+    단계적으로 뺀다. A−B* = 미래 정보 누수(같은 작성자의 나중 리뷰가 train 에 있어
+    생기는 것), B*−C* = 정당한 과거 이력 효과. 그래프 구조는 바꾸지 않는다 — 빠진
+    리뷰도 노드로는 남아 이웃 역할을 한다(`--drop-sameday-ties` 와 같은 방식).
+
+    mode:
+      a     — 제거 없음(현행 그대로)
+      bstar — test 작성자가 쓴 리뷰 중, 그 작성자의 test 리뷰 중 가장 이른 날짜와
+              같거나 나중인 train 리뷰를 제거. 날짜가 일 단위뿐이라 같은 날도
+              "나중"으로 보수적으로 처리한다(그 안의 순서가 실제 작성 시각이 아닌
+              review_id 행 순서일 뿐이라서 — 9/12 보고서 §10.2 첫날 동률 문제와 동일 이유).
+      cstar — test 작성자가 쓴 train 리뷰를 전부 제거(그 작성자의 과거 이력 전체 삭제).
+    """
+    mode = mode.lower()
+    if mode == "a":
+        return train_rel.copy()
+    df = pd.DataFrame({"user_id": user_ids, "date": pd.to_datetime(pd.Series(dates).to_numpy())})
+    is_test_author = df["user_id"].isin(df.loc[test_rel, "user_id"]).to_numpy()
+    if mode == "cstar":
+        return train_rel & ~is_test_author
+    if mode == "bstar":
+        cutoff = df.loc[test_rel].groupby("user_id")["date"].min()
+        cutoff_per_row = df["user_id"].map(cutoff)
+        later_or_sameday = (df["date"] >= cutoff_per_row).to_numpy() & cutoff_per_row.notna().to_numpy()
+        return train_rel & ~(is_test_author & later_or_sameday)
+    raise ValueError(f"알 수 없는 ablation 모드: {mode} (가능: a, bstar, cstar)")
+
+
 TIME_SPLIT_MONTHS = {"train": range(1, 10), "val": (10, 11), "test": (12,)}
 
 
@@ -235,7 +267,8 @@ def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
 
 
 def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
-               exclude_cols: list[str], seed: int, features: str = "all") -> str:
+               exclude_cols: list[str], seed: int, features: str = "all",
+               ablation: str | None = None) -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
     sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
@@ -246,6 +279,8 @@ def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: 
         sfx += "_excl-" + "-".join(exclude_cols)
     if features != "all":
         sfx += f"_{features.replace('_', '')}"
+    if ablation:
+        sfx += f"_abl{ablation}"
     if seed != 42:
         sfx += f"_seed{seed}"
     return sfx
@@ -310,6 +345,15 @@ def main() -> int:
                     help="all(기본, 조건A): as-of 37개 수작업 피처만. "
                          "all_text(조건B 기준): 37개 + 텍스트 임베딩 384차원(emb_minilm_384)을 "
                          "노드 피처에 이어붙임 — 08의 all_text와 동일 정의. 파일명에 _alltext 가 붙는다.")
+    ap.add_argument("--ablation", default=None, choices=["a", "bstar", "cstar"],
+                    help="누수분해 test-fixed ablation(9/12 §10.1). --split review 와 함께만 쓴다. "
+                         "train/val/test 분할 자체는 --ablation-seed 로 고정하고(모델 seed와 분리), "
+                         "train 에서만 a(제거없음) / bstar(test 작성자의 나중·같은날 리뷰 제거) / "
+                         "cstar(test 작성자 리뷰 전부 제거)로 단계적으로 뺀다. 그래프에는 그대로 남는다. "
+                         "파일명에 _abl<mode> 가 붙는다.")
+    ap.add_argument("--ablation-seed", type=int, default=42,
+                    help="--ablation 사용 시 train/val/test 분할을 고정하는 seed(기본 42) — "
+                         "여러 조건·여러 --seed(모델 초기화)에서 동일한 test 를 보장하기 위함")
     ap.add_argument("--behavior-col", default=None,
                     help="2×2 칸 선택용 행동 패턴 라벨 컬럼(burst_labels.parquet). 예: is_rating_deviation_v2, "
                          "is_burst. --group 과 겹쳐서 적용된다. 파일명에 _<컬럼> 이 붙는다.")
@@ -393,6 +437,8 @@ def main() -> int:
     print("[2/4] train/val/test 분할 (target 노드에서만, 사기율 유지, seed 고정)")
     target_idx_in_universe = np.flatnonzero(target_local)
     tdates = sub_nodes.loc[target_local, "date"]
+    if args.ablation and args.split != "review":
+        raise ValueError("--ablation 은 --split review 와 함께만 사용합니다 (test-fixed 설계)")
     if args.split == "user":
         folds = [user_stratified_split(sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)]
     elif args.split == "time":
@@ -400,7 +446,18 @@ def main() -> int:
     elif args.split == "rolling":
         folds = rolling_splits(tdates)
     else:
-        folds = [stratified_split(fraud, seed=args.seed)]
+        split_seed = args.ablation_seed if args.ablation else args.seed
+        folds = [stratified_split(fraud, seed=split_seed)]
+    n_removed_ablation = 0
+    if args.ablation:
+        train_rel0, val_rel, test_rel = folds[0]
+        user_ids_target = sub_nodes.loc[target_local, "user_id"].to_numpy()
+        train_rel = ablation_train_mask(tdates, user_ids_target, train_rel0, test_rel, args.ablation)
+        n_removed_ablation = int(train_rel0.sum() - train_rel.sum())
+        folds = [(train_rel, val_rel, test_rel)]
+        print(f"      [ablation={args.ablation}] test/val 고정(ablation-seed={args.ablation_seed}), "
+              f"train {train_rel0.sum():,} → {train_rel.sum():,}건 ({n_removed_ablation:,}건 제거, "
+              f"그래프에는 유지)")
 
     X_raw = X
     y_t = torch.from_numpy(fraud_all)
@@ -531,6 +588,9 @@ def main() -> int:
         "fraud_rate_target": float(fraud.mean()),
         "n_features": len(feat_cols),
         "features": args.features,
+        "ablation": args.ablation,
+        "ablation_seed": args.ablation_seed if args.ablation else None,
+        "n_removed_ablation": n_removed_ablation,
         "excluded_cols": args.exclude_cols,
         "epochs_run": epoch,
         "val": val_final,
@@ -545,7 +605,7 @@ def main() -> int:
         "elapsed_sec": round(time.time() - t0, 1),
     }
     suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                        args.exclude_cols, args.seed, args.features)
+                        args.exclude_cols, args.seed, args.features, args.ablation)
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)

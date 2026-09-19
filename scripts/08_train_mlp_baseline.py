@@ -83,7 +83,8 @@ def load_features(nodes: pd.DataFrame, features: str) -> tuple[np.ndarray, list[
 
 def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
         split: str = "review", drop_ties: bool = False,
-        behavior_col: str | None = None, behavior: str = "yes") -> dict:
+        behavior_col: str | None = None, behavior: str = "yes",
+        ablation: str | None = None, ablation_seed: int = 42) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     target = b05.build_group_mask(nodes, group, le2=False)
@@ -95,6 +96,8 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
     fraud = nodes.loc[target, "fraud"].to_numpy().astype("float32")
     n = len(X)
 
+    if ablation and split != "review":
+        raise ValueError("--ablation 은 --split review 와 함께만 사용합니다 (test-fixed 설계, 05 와 동일)")
     if split == "user":
         # 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해
         # "작성자 암기" 효과를 제거한다(README 주의사항 3번 검증용).
@@ -106,7 +109,14 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
         # 한 달씩 밀어가며 3회차 — test 10·11·12월 합산 (선택지 (c'), 05 와 동일 함수)
         folds = b05.rolling_splits(nodes.loc[target, "date"])
     else:
-        folds = [b05.stratified_split(fraud, seed=seed)]
+        folds = [b05.stratified_split(fraud, seed=ablation_seed if ablation else seed)]
+    if ablation:
+        # 누수분해 test-fixed ablation(9/12 §10.1) — test/val 은 고정, train 에서만 뺀다.
+        # GNN(05)과 같은 ablation_seed·같은 함수를 써서 동일한 test 집합을 보장한다.
+        train_rel0, val_rel, test_rel = folds[0]
+        train_rel = b05.ablation_train_mask(nodes.loc[target, "date"], nodes.loc[target, "user_id"].to_numpy(),
+                                            train_rel0, test_rel, ablation)
+        folds = [(train_rel, val_rel, test_rel)]
 
     y_t = torch.from_numpy(fraud)
     eye = scipy_to_torch_sparse(sp.eye(n, format="csr", dtype=np.float32))   # 이웃 없음
@@ -217,6 +227,11 @@ def main() -> int:
                          "결과 파일명에 _usersplit 접미사가 붙는다) / time(1~9월 train, "
                          "10~11월 val, 12월 test — 접미사 _timesplit) / rolling(한 달씩 밀어가며 3회차, "
                          "test 10~12월 합산 — 접미사 _rolling)")
+    ap.add_argument("--ablation", default=None, choices=["a", "bstar", "cstar"],
+                    help="누수분해 test-fixed ablation(9/12 §10.1, 05 와 동일 정의). --split review 필수. "
+                         "GNN(05)과 같은 --ablation-seed 로 돌려야 같은 test 로 그래프 기여를 뺄 수 있다.")
+    ap.add_argument("--ablation-seed", type=int, default=42,
+                    help="--ablation 사용 시 train/val/test 분할을 고정하는 seed(기본 42, 05 와 동일)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -225,7 +240,7 @@ def main() -> int:
     rows = []
     # seed 는 08 파일명에 원래 들어가므로 접미사에서는 뺀다(seed=42 로 넘김)
     sfx = b05.run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                         args.exclude_cols, seed=42)
+                         args.exclude_cols, seed=42, ablation=args.ablation)
     for features in args.features:
         X_all, cols = load_features(nodes, features)
         if args.exclude_cols:
@@ -235,13 +250,16 @@ def main() -> int:
             for seed in args.seeds:
                 r = run(nodes, X_all, group, seed, split=args.split,
                         drop_ties=args.drop_sameday_ties,
-                        behavior_col=args.behavior_col, behavior=args.behavior)
+                        behavior_col=args.behavior_col, behavior=args.behavior,
+                        ablation=args.ablation, ablation_seed=args.ablation_seed)
                 sc = r.pop("_scores")   # (review_id, split, score[, fold])
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,
                           "split": args.split, "excluded_cols": args.exclude_cols,
                           "behavior_col": args.behavior_col,
                           "behavior": args.behavior if args.behavior_col else None,
+                          "ablation": args.ablation,
+                          "ablation_seed": args.ablation_seed if args.ablation else None,
                           "feature_columns": (cols if "text" not in features else
                                               "emb_minilm_384 (384)" if features == "text" else
                                               cols[:len(cols) - 384] + ["emb_minilm_384 (384)"]),
