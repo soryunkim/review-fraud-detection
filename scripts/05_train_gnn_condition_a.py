@@ -58,7 +58,7 @@ import torch.nn as nn
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.data.loaders import load_rayana_asof_features  # noqa: E402
+from src.data.loaders import load_embeddings, load_rayana_asof_features  # noqa: E402
 from src.evaluation.metrics import evaluate  # noqa: E402
 from src.features.structural.graph import scipy_to_torch_sparse  # noqa: E402
 from src.features.structural.temporal_graph import RELATIONS, combine, row_normalize  # noqa: E402
@@ -235,7 +235,7 @@ def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
 
 
 def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
-               exclude_cols: list[str], seed: int) -> str:
+               exclude_cols: list[str], seed: int, features: str = "all") -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
     sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
@@ -244,6 +244,8 @@ def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: 
         sfx += f"_{behavior_col}" + ("" if behavior == "yes" else "-not")
     if exclude_cols:
         sfx += "_excl-" + "-".join(exclude_cols)
+    if features != "all":
+        sfx += f"_{features.replace('_', '')}"
     if seed != 42:
         sfx += f"_seed{seed}"
     return sfx
@@ -304,6 +306,10 @@ def main() -> int:
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: RD DEV EXT — 평점 이탈형 정의에 쓰인 피처). "
                          "파일명에 _excl-... 이 붙는다.")
+    ap.add_argument("--features", default="all", choices=["all", "all_text"],
+                    help="all(기본, 조건A): as-of 37개 수작업 피처만. "
+                         "all_text(조건B 기준): 37개 + 텍스트 임베딩 384차원(emb_minilm_384)을 "
+                         "노드 피처에 이어붙임 — 08의 all_text와 동일 정의. 파일명에 _alltext 가 붙는다.")
     ap.add_argument("--behavior-col", default=None,
                     help="2×2 칸 선택용 행동 패턴 라벨 컬럼(burst_labels.parquet). 예: is_rating_deviation_v2, "
                          "is_burst. --group 과 겹쳐서 적용된다. 파일명에 _<컬럼> 이 붙는다.")
@@ -359,12 +365,18 @@ def main() -> int:
     fraud = fraud_all[target_local]     # 리포트용 사기율은 target 기준
 
     feat_cols = [c for c in feats.columns if c != "review_id" and c not in args.exclude_cols]
-    X = feats_idx.loc[sub_nodes["review_id"].to_numpy(), feat_cols].to_numpy(dtype="float32")
+    review_ids = sub_nodes["review_id"].to_numpy()
+    X = feats_idx.loc[review_ids, feat_cols].to_numpy(dtype="float32")
+    if args.features == "all_text":
+        emb = load_embeddings()
+        X_text = np.asarray(emb[review_ids], dtype=np.float32)
+        X = np.hstack([X, X_text])
+        feat_cols = feat_cols + [f"emb_{i}" for i in range(X_text.shape[1])]
 
     group_label = f"{args.group}{'(<=2)' if args.le2 else ''}"
     print(f"[설정] group={group_label} scope={args.scope} relations={'+'.join(relations)} "
           f"frac={args.frac} n_target={n_target:,} n_universe={n_universe:,} "
-          f"사기율(target)={fraud.mean():.1%} 피처={len(feat_cols)}개 backbone={args.backbone}")
+          f"사기율(target)={fraud.mean():.1%} 피처={len(feat_cols)}개({args.features}) backbone={args.backbone}")
 
     print("[1/4] 관계 그래프 결합 및 부분그래프 추출")
     combined = combine(adjs, relations)
@@ -518,6 +530,7 @@ def main() -> int:
         "isolated_nodes_in_target": isolated,
         "fraud_rate_target": float(fraud.mean()),
         "n_features": len(feat_cols),
+        "features": args.features,
         "excluded_cols": args.exclude_cols,
         "epochs_run": epoch,
         "val": val_final,
@@ -532,7 +545,7 @@ def main() -> int:
         "elapsed_sec": round(time.time() - t0, 1),
     }
     suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                        args.exclude_cols, args.seed)
+                        args.exclude_cols, args.seed, args.features)
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
