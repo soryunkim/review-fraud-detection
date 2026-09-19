@@ -158,6 +158,22 @@ def ablation_train_mask(dates: pd.Series, user_ids: np.ndarray, train_rel: np.nd
     raise ValueError(f"알 수 없는 ablation 모드: {mode} (가능: a, bstar, cstar)")
 
 
+def train_frac_mask(train_rel: np.ndarray, frac: float, seed: int) -> np.ndarray:
+    """학습곡선 검증용 — 고정된 train 에서 무작위로 frac 비율만 남긴다(9/12 §10.1,
+    "GNN-MLP 델타가 데이터 양 효과를 상쇄한다"는 가정의 검증). val/test 는 호출부에서
+    그대로 둔다. GNN 과 MLP 가 정확히 같은 부분집합을 보도록 seed 를 공유해서 쓴다
+    (호출부에서 --ablation-seed 를 넘기면 모델 초기화 seed 와 분리된다)."""
+    if frac >= 1.0:
+        return train_rel.copy()
+    rng = np.random.default_rng(seed)
+    idx = np.flatnonzero(train_rel)
+    keep_n = int(round(len(idx) * frac))
+    keep = rng.choice(idx, size=keep_n, replace=False)
+    mask = np.zeros_like(train_rel)
+    mask[keep] = True
+    return mask
+
+
 TIME_SPLIT_MONTHS = {"train": range(1, 10), "val": (10, 11), "test": (12,)}
 
 
@@ -268,7 +284,7 @@ def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
 
 def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
                exclude_cols: list[str], seed: int, features: str = "all",
-               ablation: str | None = None) -> str:
+               ablation: str | None = None, train_frac: float = 1.0) -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
     sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
@@ -281,6 +297,8 @@ def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: 
         sfx += f"_{features.replace('_', '')}"
     if ablation:
         sfx += f"_abl{ablation}"
+    if train_frac < 1.0:
+        sfx += f"_frac{round(train_frac * 100)}"
     if seed != 42:
         sfx += f"_seed{seed}"
     return sfx
@@ -354,6 +372,10 @@ def main() -> int:
     ap.add_argument("--ablation-seed", type=int, default=42,
                     help="--ablation 사용 시 train/val/test 분할을 고정하는 seed(기본 42) — "
                          "여러 조건·여러 --seed(모델 초기화)에서 동일한 test 를 보장하기 위함")
+    ap.add_argument("--train-frac", type=float, default=1.0,
+                    help="학습곡선 검증용(9/12 §10.1) — 고정된 train 에서 이 비율만 무작위로 남긴다 "
+                         "(val/test 는 그대로). --ablation-seed 로 GNN·MLP 가 같은 부분집합을 보게 한다. "
+                         "파일명에 _frac<퍼센트> 가 붙는다.")
     ap.add_argument("--behavior-col", default=None,
                     help="2×2 칸 선택용 행동 패턴 라벨 컬럼(burst_labels.parquet). 예: is_rating_deviation_v2, "
                          "is_burst. --group 과 겹쳐서 적용된다. 파일명에 _<컬럼> 이 붙는다.")
@@ -437,8 +459,9 @@ def main() -> int:
     print("[2/4] train/val/test 분할 (target 노드에서만, 사기율 유지, seed 고정)")
     target_idx_in_universe = np.flatnonzero(target_local)
     tdates = sub_nodes.loc[target_local, "date"]
-    if args.ablation and args.split != "review":
-        raise ValueError("--ablation 은 --split review 와 함께만 사용합니다 (test-fixed 설계)")
+    test_fixed = bool(args.ablation) or args.train_frac < 1.0
+    if test_fixed and args.split != "review":
+        raise ValueError("--ablation / --train-frac 은 --split review 와 함께만 사용합니다 (test-fixed 설계)")
     if args.split == "user":
         folds = [user_stratified_split(sub_nodes.loc[target_local, "user_id"].to_numpy(), fraud, seed=args.seed)]
     elif args.split == "time":
@@ -446,7 +469,7 @@ def main() -> int:
     elif args.split == "rolling":
         folds = rolling_splits(tdates)
     else:
-        split_seed = args.ablation_seed if args.ablation else args.seed
+        split_seed = args.ablation_seed if test_fixed else args.seed
         folds = [stratified_split(fraud, seed=split_seed)]
     n_removed_ablation = 0
     if args.ablation:
@@ -458,6 +481,12 @@ def main() -> int:
         print(f"      [ablation={args.ablation}] test/val 고정(ablation-seed={args.ablation_seed}), "
               f"train {train_rel0.sum():,} → {train_rel.sum():,}건 ({n_removed_ablation:,}건 제거, "
               f"그래프에는 유지)")
+    if args.train_frac < 1.0:
+        train_rel_before = folds[0][0]
+        train_rel = train_frac_mask(train_rel_before, args.train_frac, args.ablation_seed)
+        folds = [(train_rel, folds[0][1], folds[0][2])]
+        print(f"      [train-frac={args.train_frac:.0%}] train {train_rel_before.sum():,} → "
+              f"{train_rel.sum():,}건 (val/test 불변, 그래프에는 유지)")
 
     X_raw = X
     y_t = torch.from_numpy(fraud_all)
@@ -589,8 +618,9 @@ def main() -> int:
         "n_features": len(feat_cols),
         "features": args.features,
         "ablation": args.ablation,
-        "ablation_seed": args.ablation_seed if args.ablation else None,
+        "ablation_seed": args.ablation_seed if test_fixed else None,
         "n_removed_ablation": n_removed_ablation,
+        "train_frac": args.train_frac,
         "excluded_cols": args.exclude_cols,
         "epochs_run": epoch,
         "val": val_final,
@@ -605,7 +635,7 @@ def main() -> int:
         "elapsed_sec": round(time.time() - t0, 1),
     }
     suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                        args.exclude_cols, args.seed, args.features, args.ablation)
+                        args.exclude_cols, args.seed, args.features, args.ablation, args.train_frac)
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
