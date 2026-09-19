@@ -223,13 +223,23 @@ def subsample_users(user_ids: np.ndarray, frac: float, seed: int) -> np.ndarray:
     return np.isin(user_ids, picked)
 
 
-def load_graph_2014() -> tuple[pd.DataFrame, dict[str, sp.csr_matrix]]:
+def load_graph_2014(sameday_mode: str = "asof") -> tuple[pd.DataFrame, dict[str, sp.csr_matrix]]:
+    """sameday_mode: asof(기본, 기존 엣지) / strict / bidirectional — 같은 날 동률 엣지
+    민감도 분석용(9/12 §10.2~10.3). 해당 모드로 `06_build_graphs_2014.py --sameday-mode ...`
+    를 먼저 실행해 `<관계>_<모드>.npz` 파일을 만들어둬야 한다."""
     if not GRAPH_DIR.exists():
         raise FileNotFoundError(
             f"{GRAPH_DIR} 가 없습니다. `python scripts/06_build_graphs_2014.py` 로 먼저 생성하세요."
         )
+    file_suffix = "" if sameday_mode == "asof" else f"_{sameday_mode}"
     nodes = pd.read_parquet(GRAPH_DIR / "nodes.parquet")
-    adjs = {name: sp.load_npz(GRAPH_DIR / f"{name}.npz") for name in RELATIONS}
+    missing = [n for n in RELATIONS if not (GRAPH_DIR / f"{n}{file_suffix}.npz").exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"{missing} 의 sameday_mode={sameday_mode} 그래프가 없습니다. "
+            f"`python scripts/06_build_graphs_2014.py --sameday-mode {sameday_mode}` 로 먼저 생성하세요."
+        )
+    adjs = {name: sp.load_npz(GRAPH_DIR / f"{name}{file_suffix}.npz") for name in RELATIONS}
     return nodes, adjs
 
 
@@ -284,11 +294,14 @@ def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
 
 def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
                exclude_cols: list[str], seed: int, features: str = "all",
-               ablation: str | None = None, train_frac: float = 1.0) -> str:
+               ablation: str | None = None, train_frac: float = 1.0,
+               sameday_graph_mode: str = "asof") -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
     sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
     sfx += "_notie" if drop_ties else ""
+    if sameday_graph_mode != "asof":
+        sfx += f"_sdg-{sameday_graph_mode}"
     if behavior_col:
         sfx += f"_{behavior_col}" + ("" if behavior == "yes" else "-not")
     if exclude_cols:
@@ -349,6 +362,10 @@ def main() -> int:
                     help="작성자 첫날 동률 리뷰(2014년 18,172건)를 학습·평가 대상에서 제외. "
                          "라벨이 review_id 순서로 갈리고 R-U-R 이웃이 전부 같은 날인 경계 리뷰들이라, "
                          "남은 신호가 여기서 오는지 확인하는 용도. 파일명에 _notie 가 붙는다.")
+    ap.add_argument("--sameday-graph-mode", default="asof", choices=["asof", "strict", "bidirectional"],
+                    help="같은 날 동률 엣지 처리 민감도 분석용(9/12 §10.2~10.3, `06`에서 미리 만들어둬야 함). "
+                         "asof(기본, 기존과 동일) / strict(같은 날 엣지 제거) / "
+                         "bidirectional(같은 날 쌍은 양방향). 파일명에 _sdg-<모드> 가 붙는다.")
     ap.add_argument("--split", default="review", choices=["review", "user", "time", "rolling"],
                     help="review(기본, 기존 결과와 동일): 리뷰 단위 무작위 분할. "
                          "user: 작성자 단위 분할 — 같은 작성자의 리뷰가 train/test 에 나뉘지 않게 해 "
@@ -398,8 +415,8 @@ def main() -> int:
         raise ValueError("--relations 가 비어있습니다.")
 
     t0 = time.time()
-    print("[0/4] 2014년 그래프·노드·피처 로드")
-    nodes, adjs = load_graph_2014()
+    print(f"[0/4] 2014년 그래프·노드·피처 로드 (sameday-graph-mode={args.sameday_graph_mode})")
+    nodes, adjs = load_graph_2014(args.sameday_graph_mode)
     feats = load_rayana_asof_features()
     feats_idx = feats.set_index("review_id")
 
@@ -621,6 +638,7 @@ def main() -> int:
         "ablation_seed": args.ablation_seed if test_fixed else None,
         "n_removed_ablation": n_removed_ablation,
         "train_frac": args.train_frac,
+        "sameday_graph_mode": args.sameday_graph_mode,
         "excluded_cols": args.exclude_cols,
         "epochs_run": epoch,
         "val": val_final,
@@ -635,7 +653,8 @@ def main() -> int:
         "elapsed_sec": round(time.time() - t0, 1),
     }
     suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                        args.exclude_cols, args.seed, args.features, args.ablation, args.train_frac)
+                        args.exclude_cols, args.seed, args.features, args.ablation, args.train_frac,
+                        args.sameday_graph_mode)
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -27,15 +27,29 @@ RELATIONS = {
 }
 
 
-def past_only_adjacency(nodes: pd.DataFrame, keys: list[str]) -> sp.csr_matrix:
+def past_only_adjacency(nodes: pd.DataFrame, keys: list[str],
+                        sameday_mode: str = "asof") -> sp.csr_matrix:
     """같은 key 그룹 안에서 '먼저 쓴 리뷰 → 나중 리뷰' 방향 엣지만 만든다.
 
     nodes 는 0..n-1 로컬 인덱스를 가진 DataFrame 이어야 하며 date, review_id, keys 컬럼 필요.
+
+    같은 날 작성된 리뷰끼리의 순서는 실제 작성 시각이 아니라 `review_id`(행 순서)로
+    정해질 뿐이다(9/12 보고서 §10.2 첫날 동률 문제). `sameday_mode` 로 이 불확실성을
+    다루는 방식을 고른다(민감도 분석용, 9/12 §10.3 예고):
+      asof          — 기본(기존 동작 그대로). review_id 순서를 실제 순서처럼 써서
+                      과거 방향 엣지 하나만 만든다.
+      strict        — 같은 날 엣지를 아예 만들지 않는다(날짜가 다를 때만 연결).
+                      "확실히 먼저 쓴 것"만 인정하는 가장 보수적인 버전.
+      bidirectional — 날짜가 다른 쌍은 asof 와 동일(과거→나중 단방향). 같은 날
+                      쌍은 순서를 모른다고 보고 양방향으로 모두 연결한다.
     """
+    if sameday_mode not in ("asof", "strict", "bidirectional"):
+        raise ValueError(f"알 수 없는 sameday_mode: {sameday_mode} (가능: asof, strict, bidirectional)")
     n = len(nodes)
     sort_cols = keys + ["date", "review_id"]
     order = np.lexsort([nodes[c].to_numpy() for c in reversed(sort_cols)])
     key_arr = nodes[keys].to_numpy()[order]
+    date_arr = nodes["date"].to_numpy()[order]
 
     if len(keys) == 1:
         change = key_arr[1:, 0] != key_arr[:-1, 0]
@@ -49,9 +63,20 @@ def past_only_adjacency(nodes: pd.DataFrame, keys: list[str]) -> sp.csr_matrix:
         if m < 2:
             continue
         idx = order[a:b]                          # 시간순 정렬된 로컬 인덱스
-        src, dst = np.triu_indices(m, k=1)        # src < dst  ⇒  src 가 먼저
-        rows.append(idx[dst].astype(np.int32))    # 받는 쪽(나중)
-        cols.append(idx[src].astype(np.int32))    # 보내는 쪽(먼저)
+        src, dst = np.triu_indices(m, k=1)        # src < dst  ⇒  src 가 먼저(정렬 순서상)
+        if sameday_mode == "asof":
+            rows.append(idx[dst].astype(np.int32))    # 받는 쪽(나중)
+            cols.append(idx[src].astype(np.int32))    # 보내는 쪽(먼저)
+            continue
+        same_day = date_arr[a:b][src] == date_arr[a:b][dst]
+        rows.append(idx[dst[~same_day]].astype(np.int32))
+        cols.append(idx[src[~same_day]].astype(np.int32))
+        if sameday_mode == "bidirectional" and same_day.any():
+            # 같은 날 쌍은 순서를 모르므로 양방향 모두 추가한다(단방향 하나가 아니라 둘 다).
+            rows.append(idx[dst[same_day]].astype(np.int32))
+            cols.append(idx[src[same_day]].astype(np.int32))
+            rows.append(idx[src[same_day]].astype(np.int32))
+            cols.append(idx[dst[same_day]].astype(np.int32))
 
     if not rows:
         return sp.csr_matrix((n, n), dtype=np.float32)

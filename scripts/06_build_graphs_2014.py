@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -36,6 +37,15 @@ OUT_DIR = ROOT / "data" / "processed" / f"graph_{YEAR}"
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--sameday-mode", default="asof", choices=["asof", "strict", "bidirectional"],
+                    help="같은 날 동률 엣지 처리(민감도 분석용, 9/12 §10.2~10.3). "
+                         "asof(기본, 기존 파일과 동일): review_id 순서를 실제 순서처럼 씀. "
+                         "strict: 같은 날 엣지를 만들지 않음(날짜가 다를 때만 연결). "
+                         "bidirectional: 날짜가 다른 쌍은 asof 와 동일, 같은 날 쌍은 양방향 모두 연결. "
+                         "asof 가 아니면 파일명이 <관계>_<모드>.npz 로 저장돼 기존 파일을 덮어쓰지 않는다.")
+    args = ap.parse_args()
     t0 = time.time()
     df = load_reviews(columns=["review_id", "user_id", "prod_id", "rating", "date", "fraud",
                                "year", "n_reviews_user_asof", "type_new", "type_new_le2"])
@@ -45,25 +55,37 @@ def main() -> int:
     print(f"{YEAR}년 노드 {n:,}건 | 사기율 {100 * nodes.fraud.mean():.1f}%")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    file_suffix = "" if args.sameday_mode == "asof" else f"_{args.sameday_mode}"
     adjs = {}
     for name, keys in RELATIONS.items():
-        A = past_only_adjacency(nodes, keys)
+        A = past_only_adjacency(nodes, keys, sameday_mode=args.sameday_mode)
         adjs[name] = A
-        sp.save_npz(OUT_DIR / f"{name}.npz", A)
+        sp.save_npz(OUT_DIR / f"{name}{file_suffix}.npz", A)
         indeg = np.asarray(A.sum(axis=1)).ravel()
-        print(f"  {name.upper()}  엣지 {A.nnz:>10,} | 과거 이웃 0개 노드 {100 * (indeg == 0).mean():5.1f}% "
+        print(f"  {name.upper()}{file_suffix}  엣지 {A.nnz:>10,} | 과거 이웃 0개 노드 {100 * (indeg == 0).mean():5.1f}% "
               f"| {time.time() - t0:.0f}초")
 
     # ── 정합성 검사 ─────────────────────────────────────────────────────
-    # (1) 과거 방향: 모든 엣지의 보내는 쪽이 받는 쪽보다 시간상 앞서야 한다
     order_key = nodes["date"].to_numpy("datetime64[D]").astype(np.int64) * 10**7 + nodes["review_id"].to_numpy()
-    for name, A in adjs.items():
-        coo = A.tocoo()
-        assert (order_key[coo.col] < order_key[coo.row]).all(), f"{name}: 미래 방향 엣지 존재"
-    # (2) 첫 리뷰(type_new=1)는 같은 작성자의 과거 리뷰가 없으므로 R-U-R 이웃이 0이어야 한다
-    rur_in = np.asarray(adjs["rur"].sum(axis=1)).ravel()
-    assert (rur_in[nodes["type_new"].to_numpy() == 1] == 0).all(), "첫 리뷰인데 R-U-R 과거 이웃이 있음"
-    print("정합성 검사 통과: 모든 엣지가 과거 방향 / 첫 리뷰의 R-U-R 이웃 0개")
+    if args.sameday_mode == "bidirectional":
+        # (1') bidirectional 은 설계상 같은 날 쌍에 한해 미래 방향 엣지를 허용한다.
+        #      "날짜가 다른 엣지는 전부 과거 방향"만 검사한다.
+        date_key = nodes["date"].to_numpy("datetime64[D]").astype(np.int64)
+        for name, A in adjs.items():
+            coo = A.tocoo()
+            same_day = date_key[coo.col] == date_key[coo.row]
+            assert (same_day | (order_key[coo.col] < order_key[coo.row])).all(), \
+                f"{name}: 같은 날이 아닌데 미래 방향 엣지 존재"
+        print("정합성 검사 통과: 날짜가 다른 엣지는 모두 과거 방향(같은 날 쌍만 설계대로 양방향)")
+    else:
+        # (1) 과거 방향: 모든 엣지의 보내는 쪽이 받는 쪽보다 시간상 앞서야 한다
+        for name, A in adjs.items():
+            coo = A.tocoo()
+            assert (order_key[coo.col] < order_key[coo.row]).all(), f"{name}: 미래 방향 엣지 존재"
+        # (2) 첫 리뷰(type_new=1)는 같은 작성자의 과거 리뷰가 없으므로 R-U-R 이웃이 0이어야 한다
+        rur_in = np.asarray(adjs["rur"].sum(axis=1)).ravel()
+        assert (rur_in[nodes["type_new"].to_numpy() == 1] == 0).all(), "첫 리뷰인데 R-U-R 과거 이웃이 있음"
+        print("정합성 검사 통과: 모든 엣지가 과거 방향 / 첫 리뷰의 R-U-R 이웃 0개")
 
     keep = ["review_id", "user_id", "prod_id", "rating", "date", "fraud",
             "n_reviews_user_asof", "type_new", "type_new_le2"]
