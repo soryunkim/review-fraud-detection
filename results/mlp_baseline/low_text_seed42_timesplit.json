@@ -1,6 +1,7 @@
 {
   "n_target": 78733,
   "fraud_rate_target": 0.20885778963565826,
+  "fraud_rate_test": 0.21429596841335297,
   "epochs_run": 40,
   "val": {
     "auroc": 0.6657144257641459,
@@ -34,6 +35,12 @@
   "n_features": 384,
   "seed": 42,
   "split": "time",
+  "excluded_cols": [],
+  "behavior_col": null,
+  "behavior": null,
+  "ablation": null,
+  "ablation_seed": null,
+  "train_frac": 1.0,
   "feature_columns": "emb_minilm_384 (384)",
   "hyperparams": {
     "hidden": 64,
@@ -42,5 +49,6 @@
     "weight_decay": 0.0005,
     "epochs": 200,
     "patience": 20
-  }
+  },
+  "scores_file": "data/processed/scores/mlp/low_text_seed42_timesplit.parquet"
 }

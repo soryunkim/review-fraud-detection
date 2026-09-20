@@ -1,0 +1,68 @@
+{
+  "name": "is_burst_low_rolling",
+  "files_a": [
+    "low_rur_sage_full_rolling_is_burst.parquet",
+    "low_rur_sage_full_rolling_is_burst_seed0.parquet",
+    "low_rur_sage_full_rolling_is_burst_seed1.parquet",
+    "low_rur_sage_full_rolling_is_burst_seed2.parquet",
+    "low_rur_sage_full_rolling_is_burst_seed3.parquet"
+  ],
+  "files_b": [
+    "low_all_seed0_rolling_is_burst.parquet",
+    "low_all_seed1_rolling_is_burst.parquet",
+    "low_all_seed2_rolling_is_burst.parquet",
+    "low_all_seed3_rolling_is_burst.parquet",
+    "low_all_seed42_rolling_is_burst.parquet"
+  ],
+  "n_test": 761,
+  "n_fraud_test": 269,
+  "base_rate_test": 0.35348226018396844,
+  "auprc_a_by_seed": [
+    0.4218,
+    0.4117,
+    0.4166,
+    0.4267,
+    0.4098
+  ],
+  "auprc_b_by_seed": [
+    0.4212,
+    0.406,
+    0.4191,
+    0.3952,
+    0.415
+  ],
+  "auprc_a_mean": 0.4173037006776864,
+  "auprc_b_mean": 0.4113116123774028,
+  "delta_mean": 0.005992088300283582,
+  "delta_by_seed_pair": [
+    0.0006,
+    0.0057,
+    -0.0025,
+    0.0315,
+    -0.0053
+  ],
+  "score_corr_pearson": 0.852378616817185,
+  "score_corr_spearman": 0.8398709737498319,
+  "ci95_delta_test_only": [
+    -0.004875550645446665,
+    0.017582509683153065
+  ],
+  "ci95_delta_seed_and_test": [
+    -0.010597487949021614,
+    0.026224914161726
+  ],
+  "halfwidth_delta_seed_and_test": 0.018411201055373805,
+  "share_delta_le_0_seed_and_test": 0.2465,
+  "ci95_auprc_a_alone": [
+    0.36345955647765804,
+    0.48111871184797433
+  ],
+  "ci95_auprc_b_alone": [
+    0.36142234091623676,
+    0.4743621028535843
+  ],
+  "halfwidth_auprc_a_alone": 0.058829577685158146,
+  "n_boot": 2000,
+  "boot_seed": 0,
+  "note": "Δ = A 평균 − B 평균 (seed 평균 PR-AUC). test_only 는 test 표본만, seed_and_test 는 seed 까지 복원추출"
+}
