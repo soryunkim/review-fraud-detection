@@ -376,10 +376,12 @@ def main() -> int:
     ap.add_argument("--exclude-cols", nargs="*", default=[],
                     help="피처에서 뺄 컬럼 (예: RD DEV EXT — 평점 이탈형 정의에 쓰인 피처). "
                          "파일명에 _excl-... 이 붙는다.")
-    ap.add_argument("--features", default="all", choices=["all", "all_text"],
+    ap.add_argument("--features", default="all", choices=["all", "all_text", "text"],
                     help="all(기본, 조건A): as-of 37개 수작업 피처만. "
                          "all_text(조건B 기준): 37개 + 텍스트 임베딩 384차원(emb_minilm_384)을 "
-                         "노드 피처에 이어붙임 — 08의 all_text와 동일 정의. 파일명에 _alltext 가 붙는다.")
+                         "노드 피처에 이어붙임 — 08의 all_text와 동일 정의. 파일명에 _alltext 가 붙는다. "
+                         "text(조건B 원안, 9/2 정의): 수작업 피처를 쓰지 않고 텍스트 임베딩 384차원으로 "
+                         "교체 — 엣지(그래프 구조)는 그대로다. 파일명에 _text 가 붙는다.")
     ap.add_argument("--ablation", default=None, choices=["a", "bstar", "cstar"],
                     help="누수분해 test-fixed ablation(9/12 §10.1). --split review 와 함께만 쓴다. "
                          "train/val/test 분할 자체는 --ablation-seed 로 고정하고(모델 seed와 분리), "
@@ -450,11 +452,15 @@ def main() -> int:
     feat_cols = [c for c in feats.columns if c != "review_id" and c not in args.exclude_cols]
     review_ids = sub_nodes["review_id"].to_numpy()
     X = feats_idx.loc[review_ids, feat_cols].to_numpy(dtype="float32")
-    if args.features == "all_text":
+    if args.features in ("all_text", "text"):
         emb = load_embeddings()
         X_text = np.asarray(emb[review_ids], dtype=np.float32)
-        X = np.hstack([X, X_text])
-        feat_cols = feat_cols + [f"emb_{i}" for i in range(X_text.shape[1])]
+        emb_cols = [f"emb_{i}" for i in range(X_text.shape[1])]
+        if args.features == "all_text":      # 수작업 37 + 텍스트 384 (텍스트를 "추가")
+            X = np.hstack([X, X_text])
+            feat_cols = feat_cols + emb_cols
+        else:                                # text: 수작업 피처를 텍스트로 "교체" (조건 B 원안, 9/2 정의)
+            X, feat_cols = X_text, emb_cols
 
     group_label = f"{args.group}{'(<=2)' if args.le2 else ''}"
     print(f"[설정] group={group_label} scope={args.scope} relations={'+'.join(relations)} "
