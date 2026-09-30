@@ -1,0 +1,86 @@
+{
+ "group": "high",
+ "relation": "rur",
+ "n_test_total": 8988,
+ "n_boot": 1000,
+ "cells": {
+  "all": {
+   "n": 8988,
+   "n_fraud": 633,
+   "fraud_rate": 0.07042723631508678,
+   "auc_delta_vs_fraud": 0.630974253670315,
+   "auc_ci": [
+    0.6023386819092169,
+    0.6577758845634337
+   ],
+   "mean_delta_fraud": 0.023026365786790848,
+   "mean_delta_normal": -0.036377422511577606,
+   "mean_delta_gap": 0.059403788298368454
+  },
+  "is_burst=yes": {
+   "n": 329,
+   "n_fraud": 66,
+   "fraud_rate": 0.2006079027355623,
+   "auc_delta_vs_fraud": 0.6915543265353151,
+   "auc_ci": [
+    0.6446471147973651,
+    0.767053938972934
+   ],
+   "mean_delta_fraud": 0.04262794554233551,
+   "mean_delta_normal": -0.03293035551905632,
+   "mean_delta_gap": 0.07555830106139183
+  },
+  "is_burst=no": {
+   "n": 8659,
+   "n_fraud": 567,
+   "fraud_rate": 0.06548100242522231,
+   "auc_delta_vs_fraud": 0.6218448163579157,
+   "auc_ci": [
+    0.5915987728043487,
+    0.6497858106314509
+   ],
+   "mean_delta_fraud": 0.020744699984788895,
+   "mean_delta_normal": -0.03648945316672325,
+   "mean_delta_gap": 0.057234153151512146
+  },
+  "is_rating_deviation_v2=yes": {
+   "n": 671,
+   "n_fraud": 73,
+   "fraud_rate": 0.10879284649776454,
+   "auc_delta_vs_fraud": 0.6163696339396161,
+   "auc_ci": [
+    0.5558804084953571,
+    0.6748631420065355
+   ],
+   "mean_delta_fraud": 0.030868174508213997,
+   "mean_delta_normal": -0.019414149224758148,
+   "mean_delta_gap": 0.050282323732972145
+  },
+  "is_rating_deviation_v2=no": {
+   "n": 8317,
+   "n_fraud": 560,
+   "fraud_rate": 0.06733197066249849,
+   "auc_delta_vs_fraud": 0.6305060866682628,
+   "auc_ci": [
+    0.5970462510488008,
+    0.6615326733728598
+   ],
+   "mean_delta_fraud": 0.022004129365086555,
+   "mean_delta_normal": -0.03768514469265938,
+   "mean_delta_gap": 0.059689274057745934
+  },
+  "normal(burst=no & dev=no)": {
+   "n": 8013,
+   "n_fraud": 498,
+   "fraud_rate": 0.06214900786222389,
+   "auc_delta_vs_fraud": 0.6206262174446289,
+   "auc_ci": [
+    0.5899761517570384,
+    0.655205560226067
+   ],
+   "mean_delta_fraud": 0.019707774743437767,
+   "mean_delta_normal": -0.03786148130893707,
+   "mean_delta_gap": 0.05756925605237484
+  }
+ }
+}
