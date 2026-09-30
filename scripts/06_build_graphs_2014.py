@@ -48,7 +48,8 @@ def main() -> int:
     args = ap.parse_args()
     t0 = time.time()
     df = load_reviews(columns=["review_id", "user_id", "prod_id", "rating", "date", "fraud",
-                               "year", "n_reviews_user_asof", "type_new", "type_new_le2"])
+                               "year", "n_reviews_user_asof", "type_new", "type_new_le2",
+                               "type_new_samedayfix"])
     nodes = df[df["year"] == YEAR].reset_index(drop=True)   # 로컬 0..n-1, review_id 오름차순 유지
     nodes["month"] = nodes["date"].dt.to_period("M").astype(str)
     n = len(nodes)

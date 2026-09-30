@@ -85,10 +85,10 @@ def run(nodes: pd.DataFrame, X_all: np.ndarray, group: str, seed: int,
         split: str = "review", drop_ties: bool = False,
         behavior_col: str | None = None, behavior: str = "yes",
         ablation: str | None = None, ablation_seed: int = 42,
-        train_frac: float = 1.0) -> dict:
+        train_frac: float = 1.0, sameday_fix: bool = False) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
-    target = b05.build_group_mask(nodes, group, le2=False)
+    target = b05.build_group_mask(nodes, group, le2=False, sameday_fix=sameday_fix)
     if drop_ties:
         target = target & ~b05.sameday_tie_mask(nodes)
     if behavior_col:
@@ -242,6 +242,9 @@ def main() -> int:
     ap.add_argument("--train-frac", type=float, default=1.0,
                     help="학습곡선 검증용(9/12 §10.1, 05 와 동일). 고정된 train 에서 이 비율만 "
                          "무작위로 남긴다. 파일명에 _frac<퍼센트>")
+    ap.add_argument("--sameday-fix", action="store_true",
+                    help="같은 날 첫 리뷰 동률을 전부 저활동형으로 재분류한 type_new_samedayfix 컬럼을 "
+                         "쓴다(05 와 동일, 2026-09-23 교수님 지시). 파일명에 _sdf 가 붙는다.")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -250,7 +253,8 @@ def main() -> int:
     rows = []
     # seed 는 08 파일명에 원래 들어가므로 접미사에서는 뺀다(seed=42 로 넘김)
     sfx = b05.run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
-                         args.exclude_cols, seed=42, ablation=args.ablation, train_frac=args.train_frac)
+                         args.exclude_cols, seed=42, ablation=args.ablation, train_frac=args.train_frac,
+                         sameday_fix=args.sameday_fix)
     for features in args.features:
         X_all, cols = load_features(nodes, features)
         if args.exclude_cols:
@@ -262,7 +266,7 @@ def main() -> int:
                         drop_ties=args.drop_sameday_ties,
                         behavior_col=args.behavior_col, behavior=args.behavior,
                         ablation=args.ablation, ablation_seed=args.ablation_seed,
-                        train_frac=args.train_frac)
+                        train_frac=args.train_frac, sameday_fix=args.sameday_fix)
                 sc = r.pop("_scores")   # (review_id, split, score[, fold])
                 r.update({"model": "MLP (VanillaGNN-gcn, 인접행렬=단위행렬)", "group": group,
                           "features": features, "n_features": len(cols), "seed": seed,

@@ -262,8 +262,14 @@ def sameday_tie_mask(nodes: pd.DataFrame) -> np.ndarray:
     return nodes["review_id"].map(m).fillna(False).to_numpy().astype(bool)
 
 
-def build_group_mask(nodes: pd.DataFrame, group: str, le2: bool) -> np.ndarray:
-    col = "type_new_le2" if le2 else "type_new"
+def build_group_mask(nodes: pd.DataFrame, group: str, le2: bool, sameday_fix: bool = False) -> np.ndarray:
+    """sameday_fix(2026-09-23 교수님 지시, 질문5): 작성자 "첫날" 동률 리뷰를 전부
+    저활동형으로 재분류한 `type_new_samedayfix` 컬럼을 쓴다(01_build_reviews.py 참고,
+    2014년 10,797건 영향). le2 와는 독립적 — 둘 다 주면 sameday_fix 우선."""
+    if sameday_fix:
+        col = "type_new_samedayfix"
+    else:
+        col = "type_new_le2" if le2 else "type_new"
     if group == "low":
         return nodes[col].to_numpy() == 1
     elif group == "high":
@@ -295,11 +301,12 @@ def behavior_mask(nodes: pd.DataFrame, col: str, value: str) -> np.ndarray:
 def run_suffix(split: str, drop_ties: bool, behavior_col: str | None, behavior: str,
                exclude_cols: list[str], seed: int, features: str = "all",
                ablation: str | None = None, train_frac: float = 1.0,
-               sameday_graph_mode: str = "asof") -> str:
+               sameday_graph_mode: str = "asof", sameday_fix: bool = False) -> str:
     """결과 파일명 접미사. 기본 설정(review 분할, seed 42, 옵션 없음)이면 빈 문자열이라
     기존 파일명과 동일하다. 옵션을 쓰면 서로 덮어쓰지 않게 이름이 갈린다."""
     sfx = {"user": "_usersplit", "time": "_timesplit", "rolling": "_rolling"}.get(split, "")
     sfx += "_notie" if drop_ties else ""
+    sfx += "_sdf" if sameday_fix else ""
     if sameday_graph_mode != "asof":
         sfx += f"_sdg-{sameday_graph_mode}"
     if behavior_col:
@@ -340,6 +347,10 @@ def main() -> int:
                     help="저활동(low, as-of<=1, 1순위) / 비저활동(high) / all(그룹 구분 없이 2014 전체)")
     ap.add_argument("--le2", action="store_true",
                     help="저활동 임계값을 as-of<=1 대신 <=2 로(민감도 분석용, type_new_le2 컬럼)")
+    ap.add_argument("--sameday-fix", action="store_true",
+                    help="같은 날 첫 리뷰 동률을 전부 저활동형으로 재분류한 type_new_samedayfix 컬럼을 "
+                         "쓴다(2026-09-23 교수님 지시, 질문5. 2014년 10,797건 영향). --le2 보다 우선. "
+                         "파일명에 _sdf 가 붙는다.")
     ap.add_argument("--relations", default="rur",
                     help="쉼표구분 관계 조합 {rur,rsr,rtr} 중 선택 — Phase 1-B 7조합: "
                          "rur / rsr / rtr / rur,rsr / rur,rtr / rsr,rtr / rur,rsr,rtr")
@@ -422,7 +433,7 @@ def main() -> int:
     feats = load_rayana_asof_features()
     feats_idx = feats.set_index("review_id")
 
-    group_mask = build_group_mask(nodes, args.group, args.le2)
+    group_mask = build_group_mask(nodes, args.group, args.le2, args.sameday_fix)
     if args.drop_sameday_ties:
         ties = sameday_tie_mask(nodes)
         n_drop = int((group_mask & ties).sum())
@@ -462,7 +473,7 @@ def main() -> int:
         else:                                # text: 수작업 피처를 텍스트로 "교체" (조건 B 원안, 9/2 정의)
             X, feat_cols = X_text, emb_cols
 
-    group_label = f"{args.group}{'(<=2)' if args.le2 else ''}"
+    group_label = f"{args.group}{'(<=2)' if args.le2 else ''}{'(sdf)' if args.sameday_fix else ''}"
     print(f"[설정] group={group_label} scope={args.scope} relations={'+'.join(relations)} "
           f"frac={args.frac} n_target={n_target:,} n_universe={n_universe:,} "
           f"사기율(target)={fraud.mean():.1%} 피처={len(feat_cols)}개({args.features}) backbone={args.backbone}")
@@ -628,6 +639,7 @@ def main() -> int:
         "condition": "A",
         "group": args.group,
         "le2": args.le2,
+        "sameday_fix": args.sameday_fix,
         "scope": args.scope,
         "relations": relations,
         "graph_source": "data/processed/graph_2014 (과거 방향 temporal graph, 2026-09-11)",
@@ -660,7 +672,7 @@ def main() -> int:
     }
     suffix = run_suffix(args.split, args.drop_sameday_ties, args.behavior_col, args.behavior,
                         args.exclude_cols, args.seed, args.features, args.ablation, args.train_frac,
-                        args.sameday_graph_mode)
+                        args.sameday_graph_mode, args.sameday_fix)
     stem = f"{args.group}_{'-'.join(relations)}_{args.backbone}_{args.scope}{suffix}"
     out = args.out or (RESULTS_DIR / f"{stem}.json")
     out.parent.mkdir(parents=True, exist_ok=True)

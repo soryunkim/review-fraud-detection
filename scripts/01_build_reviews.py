@@ -82,6 +82,17 @@ def add_new_account_type(df: pd.DataFrame) -> pd.DataFrame:
     df["type_new"] = (df["n_reviews_user_asof"] <= NEW_MAX).astype("int8")
     # 민감도 분석용 (주 분석은 type_new)
     df["type_new_le2"] = (df["n_reviews_user_asof"] <= NEW_MAX_SENS).astype("int8")
+
+    # 2026-09-23 교수님 지시(질문5): 같은 날 첫 리뷰 동률 재분류.
+    # type_new는 작성자의 "첫날"에 여러 건이 있으면 review_id(=원본 CSV 행 순서)로
+    # 딱 1건만 asof<=1(저활동)이 되고, 나머지는 asof>=2(비저활동)로 갈린다 — 실제로는
+    # 어느 게 "진짜 먼저"인지 알 수 없는 동률인데 행 순서가 결정한다(2014년 10,797건
+    # 영향, `sameday_tie_mask` 문서 참고). 교수님은 이 동률 리뷰를 **전부 저활동형으로**
+    # 재분류하라고 하셨다(작성일이 그 작성자의 최초 작성일과 같으면 전부 저활동형).
+    # 기존 type_new를 깨면 06~09/05/08 전체가 재실행 대상이 되므로, 병행 컬럼으로만
+    # 추가하고 기존 실험은 그대로 type_new를 계속 쓴다.
+    first_date = df["date"].dt.normalize().groupby(df["user_id"]).transform("min")
+    df["type_new_samedayfix"] = (df["date"].dt.normalize() == first_date).astype("int8")
     return df
 
 
