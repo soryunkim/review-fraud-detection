@@ -222,11 +222,19 @@ def build_labels(res: pd.DataFrame, rating_v2: pd.DataFrame) -> pd.DataFrame:
     valid90 = res["base90_days"] >= 30
     evaluable = res["elapsed"] >= 1
     is_burst = evaluable & valid90 & (res["pval_life"] < 0.01) & (res["pval_90"] < 0.01)
+    # 임계값 완화 변형(민섭, 2026-10-01). 9/23 할 일의 "5%->10% 확장"에 대응하는
+    # 버스트형 눈금은 분위수가 아니라 포아송 유의수준이므로 p<0.05 / p<0.10 으로 둔다.
+    # 라벨 자체는 완화하지 않고(주 정의는 p<0.01 유지) 확인용 칸으로만 쓴다 —
+    # 근거: docs/버스트형_임계값_완화_검토_민섭.md
+    is_burst_p05 = evaluable & valid90 & (res["pval_life"] < 0.05) & (res["pval_90"] < 0.05)
+    is_burst_p10 = evaluable & valid90 & (res["pval_life"] < 0.10) & (res["pval_90"] < 0.10)
     is_rating = res["is_rating_anom"]
     out = pd.DataFrame(
         {
             "review_id": res["review_id"],
             "is_burst": is_burst.fillna(False).astype(bool),
+            "is_burst_p05": is_burst_p05.fillna(False).astype(bool),
+            "is_burst_p10": is_burst_p10.fillna(False).astype(bool),
             "is_rating_deviation": is_rating.astype(bool),  # 구버전, 보존(오동진 지시)
             "is_burst_and_rating": (is_burst.fillna(False) & is_rating).astype(bool),
         }
