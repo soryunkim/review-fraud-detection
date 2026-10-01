@@ -9,9 +9,9 @@
 
 > **아직 결정 안 된 것 (팀 확인 필요, 아래 본문에는 임시로 표기)**
 > 1. "비저활동형" 명칭 — 교수님이 "올드"라는 단어를 언급하셨으나 정식 채택은 아님
-> 2. §2 선행연구 두 꼭지(무작위분할 / 호모필리)에 구체적으로 어떤 논문을 넣을지
+> 2. ~~§2 선행연구 두 꼭지에 어떤 논문을 넣을지~~ — **초안 작성됨(민섭, 10/1)**. 무작위분할: CARE-GNN·PC-GNN·BWGNN(세 논문의 공개 코드에서 분할 방식 직접 확인, [`../prior-research/분할방식_검증_민섭.md`](../prior-research/분할방식_검증_민섭.md)). 호모필리: CARE-GNN·BWGNN·Wang et al. 2023. **논문 선정 자체는 팀 확인 필요**
 > 3. 평점 이탈형 5%→10% 확장 결과(별도 분석, `results/bootstrap/rdv2_10_high_*.json`)를 이 논문에 넣을지 — 교수님이 지정한 §4 구조(3조건)에는 없음, 3페이지 제약상 제외하는 쪽으로 임시 처리
-> 4. 참고문헌 보강
+> 4. ~~참고문헌 보강~~ — **8편으로 1차 작성됨(민섭, 10/1)**. §3 본문의 인용 번호와 맞추는 작업 남음
 
 ---
 
@@ -49,11 +49,15 @@
 
 ### 2.1 무작위 분할 기반 평가
 
-[무작위 분할을 사용하는 선행 연구 — 팀 확인 필요. `prior-research/` 중 R-U-R 또는 작성자 관계를 쓰면서 리뷰 단위 무작위 분할을 채택한 연구를 선별해 인용. 후보: CARE-GNN(Dou et al., 2020) 계열 — 분할 방식 재확인 필요]. 이러한 평가는 같은 작성자의 미래 리뷰가 학습에 유입되는 것을 배제하지 않아, 관계 정보의 기여를 과대평가할 구조적 위험을 안고 있다. 본 연구는 이를 정량적으로 보인다(§3.4).
+리뷰 사기 탐지의 대표적인 GNN 모델들은 공통적으로 리뷰(노드)를 **무작위로 층화 분할**해 평가한다. CARE-GNN[3]은 공개 구현에서 `train_test_split(stratify=labels, test_size=0.60, shuffle=True)`로 학습 40% / 평가 60%를 무작위 추출하며, PC-GNN[4]과 BWGNN[5] 역시 동일한 방식(층화·무작위, 기본 학습 비율 0.4)을 사용한다. 세 모델 모두 작성 시각을 분할에 사용하지 않는다.
+
+이들이 공통으로 사용하는 YelpChi 데이터셋은 본 연구와 동일하게 같은 작성자(R-U-R)·같은 가게/평점(R-S-R)·같은 가게/시기(R-T-R) 관계로 구성된다. 리뷰를 무작위로 나누면 **채점 대상 리뷰보다 나중에 작성된 같은 작성자의 리뷰가 학습 그래프에 포함**되므로, R-U-R을 사용하는 순간 미래 정보가 구조적으로 유입된다. 본 연구는 이 유입분이 관측되는 관계 정보 기여의 28%에 해당함을 정량적으로 보인다(§3.4).
 
 ### 2.2 호모필리 가정
 
-[호모필리 가정에 의존하는 선행 연구 — 팀 확인 필요. 구조/메타데이터 기반 GNN(CARE-GNN, Dou et al. 2020; PC-GNN, Liu et al. 2021 등)은 공통적으로 이웃 관계가 사기/정상을 가를 것이라는 전제 위에서 설계된다]. 이들은 이질적인 조건(정상 다수 사이에 섞인 사기, 혹은 이력이 없는 콜드 스타트)에서 관계 정보의 유효성이 조건에 따라 달라진다는 점을 체계적으로 분해하지 않는다.
+GNN 기반 탐지 모델은 이웃이 자신과 같은 라벨을 가질 것이라는 호모필리(동질성)를 전제로 이웃 정보를 집계한다. 선행 연구들도 이 전제가 관계에 따라 성립하지 않음을 인지하고 있다. CARE-GNN[3]은 YelpChi의 관계별 라벨 유사도가 크게 갈린다는 점을 보고하며 이를 사기꾼의 "관계 위장(relation camouflage)"으로 설명하고, BWGNN[5]은 이상치가 그래프 스펙트럼을 고주파 쪽으로 이동시킨다는 관측에서 저주파(= 호모필리) 가정의 한계를 지적한다. Wang et al.[6]은 낮은 호모필리 환경에서 기존 탐지기들이 일반화에 실패함을 직접 보인다.
+
+그러나 이들은 호모필리의 결여를 **모델 구조를 개선할 동기**로 삼을 뿐, 관계 정보의 기여가 관계 종류와 대상 리뷰의 성격에 따라 어떻게 갈리는지를 분해해 제시하지 않는다. 특히 과거 이력이 존재하지 않는 콜드 스타트 리뷰에서 관계 정보가 어떤 값을 갖는지는 다루어지지 않는다.
 
 ### 2.3 본 연구의 위치
 
@@ -69,8 +73,8 @@ YelpZip 2014년 리뷰 180,659건(Yelp 필터가 걸러낸 리뷰 12.7%, "사기
 
 | 유형 | 정의 | 건수 | 걸러진 비율 |
 |---|---|---|---|
-| 저활동형(가제) | 작성자의 첫 리뷰 | 89,530 | — |
-| 비저활동형(가제) | 이전 리뷰가 있는 작성자의 리뷰 | 91,129 | — |
+| 저활동형(가제) | 작성자의 첫 리뷰 | 89,530 | 20.9% |
+| 비저활동형(가제) | 이전 리뷰가 있는 작성자의 리뷰 | 91,129 | 4.6% |
 
 > 건수는 같은 날 첫 리뷰 동률 10,797건을 전부 저활동형으로 재분류한 최종 기준(§3.5)이다.
 
@@ -154,4 +158,15 @@ A−B(0.036, 전체의 **28%**)는 미래 정보 유입에 의한 거품이고, 
 
 ## 참고문헌
 
-[보충 필요 — §2 두 꼭지에 맞춰 선별]
+[1] S. Rayana and L. Akoglu, "Collective opinion spam detection: Bridging review networks and metadata," in *Proc. ACM SIGKDD*, 2015.
+[2] W. L. Hamilton, R. Ying, and J. Leskovec, "Inductive representation learning on large graphs," in *Proc. NeurIPS*, 2017.
+[3] Y. Dou, Z. Liu, L. Sun, Y. Deng, H. Peng, and P. S. Yu, "Enhancing graph neural network-based fraud detectors against camouflaged fraudsters," in *Proc. ACM CIKM*, 2020.
+[4] Y. Liu, X. Ao, Z. Qin, J. Chi, J. Feng, H. Yang, and Q. He, "Pick and choose: A GNN-based imbalanced learning approach for fraud detection," in *Proc. Web Conf. (WWW)*, 2021.
+[5] J. Tang, J. Li, Z. Gao, and J. Li, "Rethinking graph neural networks for anomaly detection," in *Proc. ICML*, 2022.
+[6] Y. Wang et al., "Label information enhanced fraud detection against low homophily in graphs," in *Proc. Web Conf. (WWW)*, 2023.
+[7] G. Fei, A. Mukherjee, B. Liu, M. Hsu, M. Castellanos, and R. Ghosh, "Exploiting burstiness in reviews for review spammer detection," in *Proc. ICWSM*, 2013.
+[8] M. Ott, Y. Choi, C. Cardie, and J. T. Hancock, "Finding deceptive opinion spam by any stretch of the imagination," in *Proc. ACL*, 2011.
+
+> **검증 상태**: [3][4][5]의 분할 방식은 각 저자의 공개 코드 원문에서 직접 확인했습니다
+> (근거·코드 인용: [`../prior-research/분할방식_검증_민섭.md`](../prior-research/분할방식_검증_민섭.md)).
+> [7][8]은 유형 정의·피처의 출처로 §3에서 인용되며, 최종본에서 §3 본문과 번호를 맞춰야 합니다.
