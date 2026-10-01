@@ -1,0 +1,68 @@
+{
+  "name": "high_rur_sdf_rolling_is_rating_deviation_v2_10",
+  "files_a": [
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed0.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed1.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed2.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed3.parquet"
+  ],
+  "files_b": [
+    "high_all_seed0_rolling_sdf_is_rating_deviation_v2_10.parquet",
+    "high_all_seed1_rolling_sdf_is_rating_deviation_v2_10.parquet",
+    "high_all_seed2_rolling_sdf_is_rating_deviation_v2_10.parquet",
+    "high_all_seed3_rolling_sdf_is_rating_deviation_v2_10.parquet",
+    "high_all_seed42_rolling_sdf_is_rating_deviation_v2_10.parquet"
+  ],
+  "n_test": 4034,
+  "n_fraud_test": 241,
+  "base_rate_test": 0.059742191373326724,
+  "auprc_a_by_seed": [
+    0.1937,
+    0.1718,
+    0.204,
+    0.1925,
+    0.1914
+  ],
+  "auprc_b_by_seed": [
+    0.1447,
+    0.1591,
+    0.1559,
+    0.1466,
+    0.1594
+  ],
+  "auprc_a_mean": 0.19069797339057198,
+  "auprc_b_mean": 0.15314516607202394,
+  "delta_mean": 0.03755280731854804,
+  "delta_by_seed_pair": [
+    0.049,
+    0.0127,
+    0.0481,
+    0.046,
+    0.032
+  ],
+  "score_corr_pearson": 0.7695685615876698,
+  "score_corr_spearman": 0.8032916295470048,
+  "ci95_delta_test_only": [
+    0.006483621154853758,
+    0.07015417879285636
+  ],
+  "ci95_delta_seed_and_test": [
+    0.005051317740511645,
+    0.07221415862930834
+  ],
+  "halfwidth_delta_seed_and_test": 0.03358142044439835,
+  "share_delta_le_0_seed_and_test": 0.014,
+  "ci95_auprc_a_alone": [
+    0.15587137850118865,
+    0.23623232447918605
+  ],
+  "ci95_auprc_b_alone": [
+    0.12681418013161966,
+    0.19070874009902394
+  ],
+  "halfwidth_auprc_a_alone": 0.0401804729889987,
+  "n_boot": 2000,
+  "boot_seed": 0,
+  "note": "Δ = A 평균 − B 평균 (seed 평균 PR-AUC). test_only 는 test 표본만, seed_and_test 는 seed 까지 복원추출"
+}

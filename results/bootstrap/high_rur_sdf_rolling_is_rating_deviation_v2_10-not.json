@@ -1,0 +1,68 @@
+{
+  "name": "high_rur_sdf_rolling_is_rating_deviation_v2_10-not",
+  "files_a": [
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed0.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed1.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed2.parquet",
+    "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed3.parquet"
+  ],
+  "files_b": [
+    "high_all_seed0_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+    "high_all_seed1_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+    "high_all_seed2_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+    "high_all_seed3_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+    "high_all_seed42_rolling_sdf_is_rating_deviation_v2_10-not.parquet"
+  ],
+  "n_test": 19794,
+  "n_fraud_test": 914,
+  "base_rate_test": 0.04617560877033444,
+  "auprc_a_by_seed": [
+    0.3278,
+    0.326,
+    0.3234,
+    0.3276,
+    0.3252
+  ],
+  "auprc_b_by_seed": [
+    0.2068,
+    0.206,
+    0.2036,
+    0.1959,
+    0.2026
+  ],
+  "auprc_a_mean": 0.3260156727284612,
+  "auprc_b_mean": 0.20299523858319807,
+  "delta_mean": 0.12302043414526315,
+  "delta_by_seed_pair": [
+    0.121,
+    0.12,
+    0.1198,
+    0.1317,
+    0.1226
+  ],
+  "score_corr_pearson": 0.7757957163319025,
+  "score_corr_spearman": 0.8366865741062277,
+  "ci95_delta_test_only": [
+    0.10051428000860245,
+    0.14357210673991605
+  ],
+  "ci95_delta_seed_and_test": [
+    0.09963840450437254,
+    0.14544424891739846
+  ],
+  "halfwidth_delta_seed_and_test": 0.02290292220651296,
+  "share_delta_le_0_seed_and_test": 0.0,
+  "ci95_auprc_a_alone": [
+    0.2962709799585768,
+    0.35762753904385874
+  ],
+  "ci95_auprc_b_alone": [
+    0.18265322547956123,
+    0.226616936807224
+  ],
+  "halfwidth_auprc_a_alone": 0.030678279542640963,
+  "n_boot": 2000,
+  "boot_seed": 0,
+  "note": "Δ = A 평균 − B 평균 (seed 평균 PR-AUC). test_only 는 test 표본만, seed_and_test 는 seed 까지 복원추출"
+}

@@ -1,0 +1,58 @@
+{
+  "name": "normal_vs_ratingdev10_rur_sdf_rolling",
+  "cell_x": {
+    "files_a": [
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed0.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed1.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed2.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10-not_seed3.parquet"
+    ],
+    "files_b": [
+      "high_all_seed0_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+      "high_all_seed1_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+      "high_all_seed2_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+      "high_all_seed3_rolling_sdf_is_rating_deviation_v2_10-not.parquet",
+      "high_all_seed42_rolling_sdf_is_rating_deviation_v2_10-not.parquet"
+    ],
+    "n_test": 19794,
+    "n_fraud_test": 914,
+    "delta": 0.12302043414526315,
+    "ci95_delta": [
+      0.0997707312684484,
+      0.14646152322003964
+    ]
+  },
+  "cell_y": {
+    "files_a": [
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed0.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed1.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed2.parquet",
+      "high_rur_sage_full_rolling_sdf_is_rating_deviation_v2_10_seed3.parquet"
+    ],
+    "files_b": [
+      "high_all_seed0_rolling_sdf_is_rating_deviation_v2_10.parquet",
+      "high_all_seed1_rolling_sdf_is_rating_deviation_v2_10.parquet",
+      "high_all_seed2_rolling_sdf_is_rating_deviation_v2_10.parquet",
+      "high_all_seed3_rolling_sdf_is_rating_deviation_v2_10.parquet",
+      "high_all_seed42_rolling_sdf_is_rating_deviation_v2_10.parquet"
+    ],
+    "n_test": 4034,
+    "n_fraud_test": 241,
+    "delta": 0.03755280731854804,
+    "ci95_delta": [
+      0.005608497969619252,
+      0.07088985935845214
+    ]
+  },
+  "delta_diff_x_minus_y": 0.0854676268267151,
+  "ci95_delta_diff": [
+    0.04424529949337628,
+    0.12314684463406367
+  ],
+  "share_diff_le_0": 0.001,
+  "n_boot": 2000,
+  "boot_seed": 0,
+  "note": "칸마다 test 리뷰와 seed 를 독립 복원추출. Δ = GNN 평균 PR-AUC − MLP 평균 PR-AUC"
+}
