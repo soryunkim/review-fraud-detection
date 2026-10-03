@@ -39,7 +39,7 @@ def load(name: str) -> tuple[float, float, float]:
 
 
 def main() -> None:
-    plt.rcParams["font.family"] = "Malgun Gothic"
+    plt.rcParams["font.family"] = ["Malgun Gothic", "AppleGothic", "DejaVu Sans"]  # Windows / macOS, − 기호 대체
     plt.rcParams["axes.unicode_minus"] = False
 
     labels, vals, los, his = [], [], [], []
@@ -52,7 +52,9 @@ def main() -> None:
 
     fig, ax = plt.subplots(figsize=(3.4, 2.3), dpi=300)
     y = range(len(labels))[::-1]
-    colors = ["#2f6f4e" if v > 0 else "#9b3b3b" for v in vals]
+    # 색은 유의성 기준 — 95% CI가 0을 포함하면 회색(v2, 김소륜 10/3)
+    colors = ["#9a9a9a" if v - lo <= 0 <= v + hi else ("#2f6f4e" if v > 0 else "#9b3b3b")
+              for v, lo, hi in zip(vals, los, his)]
     ax.barh(list(y), vals, height=0.6, color=colors, alpha=0.85)
     ax.errorbar(vals, list(y), xerr=[los, his], fmt="none", ecolor="#333333",
                 elinewidth=0.8, capsize=2.5)
@@ -65,9 +67,9 @@ def main() -> None:
         ax.spines[s].set_visible(False)
     for i, v, lo, hi in zip(y, vals, los, his):  # 값 표기는 오차막대 바깥에
         x = v + hi + 0.004 if v >= 0 else v - lo - 0.004
-        ax.text(x, i, f"{v:+.3f}", va="center",
+        ax.text(x, i, f"{v:+.3f}".replace("-", "\u2212"), va="center",
                 ha="left" if v >= 0 else "right", fontsize=6)
-    ax.set_xlim(-0.08, 0.16)
+    ax.set_xlim(-0.095, 0.16)
     fig.tight_layout(pad=0.3)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT, bbox_inches="tight")
