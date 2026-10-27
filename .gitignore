@@ -24,3 +24,6 @@ Thumbs.db
 
 # 비밀값
 .env
+
+# Word 임시 잠금 파일
+~$*

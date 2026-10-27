@@ -1,11 +1,13 @@
 """
-17_paper_figure.py — 논문 그림 1: 유형·관계별 관계 정보 기여 (오동진, 2026-10-02)
+17_paper_figure.py — 논문 그림 1: 이력·관계별 관계 정보 기여 (오동진, 2026-10-02)
 
 9/23 미팅에서 교수님이 "이 그림(슬라이드 5)을 논문에 넣을 것"이라고 지시한 그림을,
 최종 수치(rolling 3회 + 동률 재분류)로 다시 그린다. 값은 results/bootstrap 의
 부트스트랩 JSON에서 직접 읽어 수작업 전사 오류를 막는다.
 
-출력: docs/paper/fig1_contribution.png
+출력: docs/paper/fig1_contribution_history.png
+(10/15 김소륜: 교수님 수정본에 맞춰 저활동/비저활동 → 이력 미보유/보유, 가게 → 상점으로 라벨 변경.
+ 이전 라벨 그림은 fig1_contribution.png 로 남겨 둠)
 """
 
 from __future__ import annotations
@@ -19,16 +21,16 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOT = ROOT / "results" / "bootstrap"
-OUT = ROOT / "docs" / "paper" / "fig1_contribution.png"
+OUT = ROOT / "docs" / "paper" / "fig1_contribution_history.png"
 
 # (라벨, 부트스트랩 파일, 그룹)
 ROWS = [
-    ("비저활동 · 같은 작성자", "high_rur_sage_vs_mlp37_rolling_sdf", "high"),
-    ("비저활동 · 같은 가게·평점", "high_rsr_sage_vs_mlp37_rolling_sdf", "high"),
-    ("비저활동 · 같은 가게·달", "high_rtr_sage_vs_mlp37_rolling_sdf", "high"),
-    ("저활동 · 같은 작성자", "low_rur_sage_vs_mlp37_rolling_sdf", "low"),
-    ("저활동 · 같은 가게·평점", "low_rsr_sage_vs_mlp37_rolling_sdf", "low"),
-    ("저활동 · 같은 가게·달", "low_rtr_sage_vs_mlp37_rolling_sdf", "low"),
+    ("이력 보유 · 같은 작성자", "high_rur_sage_vs_mlp37_rolling_sdf", "high"),
+    ("이력 보유 · 같은 상점·평점", "high_rsr_sage_vs_mlp37_rolling_sdf", "high"),
+    ("이력 보유 · 같은 상점·달", "high_rtr_sage_vs_mlp37_rolling_sdf", "high"),
+    ("이력 미보유 · 같은 작성자", "low_rur_sage_vs_mlp37_rolling_sdf", "low"),
+    ("이력 미보유 · 같은 상점·평점", "low_rsr_sage_vs_mlp37_rolling_sdf", "low"),
+    ("이력 미보유 · 같은 상점·달", "low_rtr_sage_vs_mlp37_rolling_sdf", "low"),
 ]
 
 
@@ -69,7 +71,7 @@ def main() -> None:
         x = v + hi + 0.004 if v >= 0 else v - lo - 0.004
         ax.text(x, i, f"{v:+.3f}".replace("-", "\u2212"), va="center",
                 ha="left" if v >= 0 else "right", fontsize=6)
-    ax.set_xlim(-0.095, 0.16)
+    ax.set_xlim(-0.11, 0.16)
     fig.tight_layout(pad=0.3)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT, bbox_inches="tight")

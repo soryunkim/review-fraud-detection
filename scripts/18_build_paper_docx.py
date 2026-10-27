@@ -11,7 +11,11 @@ scripts/17_paper_figure.py 가 먼저 생성해야 한다.
 
 사용법
   python scripts/17_paper_figure.py          # 그림 먼저
-  python scripts/18_build_paper_docx.py      # docs/paper/KSC2026_초안_v4.docx 생성
+  python scripts/18_build_paper_docx.py      # docs/paper/archive/KSC2026_초안_v4.docx 생성
+
+(10/27 김소륜: 1차 최종 제출본 docs/paper/KSC26_1차최종제출_오동진팀.docx 는 이 스크립트의
+ v4 출력 이후 교수님 피드백을 Word에서 직접 반영한 것이라 이 스크립트로 재생성되지 않는다.
+ 중간본은 docs/paper/archive/ 로 옮겼다.)
 
 v2 (김소륜, 2026-10-03) — 검토 반영: 3.3 rolling 회차 설명을 코드(05 ROLLING_FOLDS)에 맞춤,
 표 1의 분할 조건 명시, 이중 반올림 정정(−0.026→−0.025, −0.038→−0.037, +0.086→+0.085),
@@ -27,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FORM = ROOT / "docs" / "paper" / "DocForm_1.docx"
-OUT = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "docs" / "paper" / "KSC2026_초안_v4.docx")
+OUT = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "docs" / "paper" / "archive" / "KSC2026_초안_v4.docx")
 TPL = tempfile.mkdtemp(prefix="ksc_tpl_")
 with zipfile.ZipFile(FORM) as z:
     z.extractall(TPL)
@@ -380,7 +384,7 @@ doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
        '<w:body>' + ''.join(parts) + SECT2 + '</w:body></w:document>')
 
-FIG = str(ROOT / "docs" / "paper" / "fig1_contribution.png")
+FIG = str(ROOT / "docs" / "paper" / "archive" / "fig1_contribution.png")
 work = os.path.join(tempfile.mkdtemp(prefix='ksc_build_'), 'build')
 if os.path.exists(work):
     shutil.rmtree(work)

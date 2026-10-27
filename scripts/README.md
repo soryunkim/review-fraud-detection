@@ -13,6 +13,26 @@
 | 04 | `04_add_burst_kde.py` (오동진) | `reviews.parquet` | `reviews.parquet` (+ `type_burst_kde`, `type_class_kde` 컬럼) | 수 분 |
 | 05 | `05_train_gnn_condition_a.py` | `reviews.parquet` + `features_handcrafted.parquet` | `results/condition_a/<type>_<backbone>.json` | 유형·표본 크기에 따라 초~분 단위 |
 
+06~20 (시간 순서 평가·논문 단계, 각 파일 상단 docstring에 입력·출력·사용법이 있음):
+
+| # | 스크립트 | 내용 |
+|---|---|---|
+| 06 | `06_build_graphs_2014.py` | 2014년 리뷰 노드 + 과거 방향 관계 그래프 3종 (R-U-R, R-S-R, R-T-R) |
+| 07 | `07_build_features_asof_2014.py` | 수작업 피처의 작성 시점(as-of) 재계산 |
+| 08 | `08_train_mlp_baseline.py` | 그래프 없는 MLP 기준선 |
+| 09 | `09_burst_trial_exploration.py` | 버스트형 정의 트라이얼 (탐색용, 파이프라인 미편입) |
+| 10 | `10_paired_bootstrap.py` | GNN vs MLP PR-AUC 차이의 짝지은 부트스트랩 신뢰구간 |
+| 11 | `11_compare_cell_deltas.py` | 두 칸의 그래프 기여 차이 신뢰구간 |
+| 12 | `12_type_intensity_gain.py` | 유형 강도별 관계 정보 기여 |
+| 13 | `13_relation_label_signal.py` | 관계 자체의 사기 신호(호모필리) |
+| 14 | `14_score_by_type.py` | 전체 학습 · 유형별 채점 |
+| 15 | `15_review_level_gain.py` | 리뷰 단위 그래프 기여 지표 |
+| 16 | `16_graph_gain_regression.py` | 그래프 기여의 회귀 분석 |
+| 17 | `17_paper_figure.py` | 논문 그림 1 → `docs/paper/fig1_contribution_history.png` |
+| 18 | `18_build_paper_docx.py` | 학회 양식 초안 docx 생성 (v4까지. 최종본은 Word에서 직접 수정) |
+| 19 | `19_leakage_share_ci.py` | 누수 비중(28%) 신뢰구간 |
+| 20 | `20_basic_stats_table.py` | 표 1 기초 데이터 통계 |
+
 ```bash
 python scripts/01_build_reviews.py
 python scripts/02_embed_text.py 2>&1 | tee logs/embed.log
